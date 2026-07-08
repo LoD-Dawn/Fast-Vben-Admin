@@ -7,7 +7,7 @@ const routes: RouteRecordRaw[] = [
       authority: ['business:item:list'],
       icon: 'lucide:package',
       order: 20,
-      title: '示例资源',
+      title: 'menu.items',
     },
     name: 'Items',
     path: '/items',

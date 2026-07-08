@@ -92,6 +92,10 @@ export type DepartmentCreate = {
      * Is Active
      */
     is_active?: boolean;
+    /**
+     * Remark
+     */
+    remark?: string | null;
 };
 
 /**
@@ -122,6 +126,10 @@ export type DepartmentPublic = {
      * Is Active
      */
     is_active?: boolean;
+    /**
+     * Remark
+     */
+    remark?: string | null;
     /**
      * Id
      */
@@ -164,6 +172,10 @@ export type DepartmentUpdate = {
      * Is Active
      */
     is_active?: boolean | null;
+    /**
+     * Remark
+     */
+    remark?: string | null;
 };
 
 /**

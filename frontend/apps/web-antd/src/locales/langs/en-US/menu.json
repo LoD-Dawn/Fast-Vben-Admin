@@ -1,0 +1,17 @@
+{
+  "dashboard": "Dashboard",
+  "system": "System",
+  "systemUsers": "Users",
+  "systemRoles": "Roles",
+  "systemMenus": "Menus",
+  "systemDepartments": "Departments",
+  "systemDictionaries": "Dictionaries",
+  "systemSettings": "Settings",
+  "logs": "Audit Logs",
+  "loginLogs": "Login Logs",
+  "operationLogs": "Operation Logs",
+  "files": "Files",
+  "notices": "Notices",
+  "messages": "Messages",
+  "items": "Sample Items"
+}

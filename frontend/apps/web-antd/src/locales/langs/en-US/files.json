@@ -1,0 +1,14 @@
+{
+  "fileName": "File Name",
+  "extension": "Extension",
+  "contentType": "Type",
+  "size": "Size",
+  "storage": "Storage",
+  "public": "Public",
+  "uploadedAt": "Uploaded At",
+  "download": "Download",
+  "item": "File",
+  "searchPlaceholder": "Search file name, type or extension",
+  "keyword": "Keyword",
+  "operation": "Actions"
+}

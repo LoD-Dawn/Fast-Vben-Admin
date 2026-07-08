@@ -41,7 +41,7 @@ def test_operation_log_is_written_for_mutating_request(
         headers=superuser_token_headers,
         json={
             "code": role_code,
-            "name": "审计测试角色",
+            "name": f"审计测试角色_{role_code}",
             "description": "operation log test",
             "sort": 99,
             "is_active": True,
@@ -49,20 +49,28 @@ def test_operation_log_is_written_for_mutating_request(
         },
     )
     assert create_response.status_code == 200
+    role = create_response.json()
 
-    logs_response = client.get(
-        f"{settings.API_V1_STR}/logs/operation",
-        headers=superuser_token_headers,
-        params={"keyword": "/api/v1/roles", "method": "POST", "page_size": 50},
-    )
-    assert logs_response.status_code == 200
-    logs = logs_response.json()["items"]
-    assert any(
-        log["path"] == f"{settings.API_V1_STR}/roles"
-        and log["method"] == "POST"
-        and log["status_code"] == 200
-        for log in logs
-    )
+    try:
+        logs_response = client.get(
+            f"{settings.API_V1_STR}/logs/operation",
+            headers=superuser_token_headers,
+            params={"keyword": "/api/v1/roles", "method": "POST", "page_size": 50},
+        )
+        assert logs_response.status_code == 200
+        logs = logs_response.json()["items"]
+        assert any(
+            log["path"] == f"{settings.API_V1_STR}/roles"
+            and log["method"] == "POST"
+            and log["status_code"] == 200
+            for log in logs
+        )
+    finally:
+        delete_response = client.delete(
+            f"{settings.API_V1_STR}/roles/{role['id']}",
+            headers=superuser_token_headers,
+        )
+        assert delete_response.status_code == 204
 
 
 def test_normal_user_cannot_read_audit_logs(

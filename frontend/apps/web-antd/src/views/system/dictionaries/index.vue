@@ -1,464 +1,364 @@
-<script setup lang="ts">
-import type { TableColumnsType } from 'ant-design-vue';
-
+<script lang="ts" setup>
+import type {
+  OnActionClickParams,
+  VxeTableGridOptions,
+} from '#/adapter/vxe-table';
 import type {
   DictionaryItemRecord,
   DictionaryTypeRecord,
 } from '#/api';
 
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
+
+import { Page, useVbenDrawer } from '@vben/common-ui';
+import { IconifyIcon, Plus } from '@vben/icons';
 
 import {
-  createDictionaryItemApi,
-  createDictionaryTypeApi,
+  Button,
+  Card,
+  Dropdown,
+  Empty,
+  InputSearch,
+  Menu,
+  message,
+  Spin,
+  Tag,
+} from 'ant-design-vue';
+
+import { useVbenVxeGrid } from '#/adapter/vxe-table';
+import {
   deleteDictionaryItemApi,
   deleteDictionaryTypeApi,
   listDictionaryItemsApi,
   listDictionaryTypesApi,
   updateDictionaryItemApi,
-  updateDictionaryTypeApi,
 } from '#/api';
 
-import {
-  Button as AButton,
-  Form as AForm,
-  FormItem as AFormItem,
-  Input as AInput,
-  InputNumber as AInputNumber,
-  InputSearch as AInputSearch,
-  Modal as AModal,
-  Space as ASpace,
-  Switch as ASwitch,
-  Table as ATable,
-  Tag as ATag,
-  Textarea as ATextarea,
-  message,
-} from 'ant-design-vue';
+import { buildKeyword, confirmAction } from '../shared/utils';
+import { useItemColumns, useItemGridFormSchema } from './data';
+import ItemForm from './modules/item-form.vue';
+import TypeForm from './modules/type-form.vue';
 
+const allTypes = ref<DictionaryTypeRecord[]>([]);
+const typeSearchValue = ref('');
 const typeLoading = ref(false);
-const itemLoading = ref(false);
-const typeModalOpen = ref(false);
-const itemModalOpen = ref(false);
-const saving = ref(false);
-const editingType = ref<DictionaryTypeRecord | null>(null);
-const editingItem = ref<DictionaryItemRecord | null>(null);
-const selectedType = ref<DictionaryTypeRecord | null>(null);
-const dictionaryTypes = ref<DictionaryTypeRecord[]>([]);
-const dictionaryItems = ref<DictionaryItemRecord[]>([]);
+const selectedType = ref<DictionaryTypeRecord>();
 
-const typeQuery = reactive({
-  keyword: '',
-  page: 1,
-  pageSize: 20,
-  total: 0,
+const filteredTypes = computed(() => {
+  const keyword = typeSearchValue.value.trim().toLowerCase();
+  if (!keyword) {
+    return allTypes.value;
+  }
+  return allTypes.value.filter(
+    (type) =>
+      type.name.toLowerCase().includes(keyword) ||
+      type.code.toLowerCase().includes(keyword),
+  );
 });
 
-const itemQuery = reactive({
-  keyword: '',
-  page: 1,
-  pageSize: 20,
-  total: 0,
+const itemTableTitle = computed(() => {
+  if (!selectedType.value) {
+    return '字典项';
+  }
+  return `字典项 · ${selectedType.value.name}`;
 });
 
-const typeForm = reactive({
-  code: '',
-  description: '',
-  is_active: true,
-  name: '',
+const [TypeFormDrawer, typeFormDrawerApi] = useVbenDrawer({
+  connectedComponent: TypeForm,
+  destroyOnClose: true,
 });
 
-const itemForm = reactive({
-  color: '',
-  extra_data: '',
-  is_active: true,
-  label: '',
-  sort: 0,
-  value: '',
+const [ItemFormDrawer, itemFormDrawerApi] = useVbenDrawer({
+  connectedComponent: ItemForm,
+  destroyOnClose: true,
 });
 
-const typeColumns: TableColumnsType<DictionaryTypeRecord> = [
-  { dataIndex: 'name', title: '字典名称' },
-  { dataIndex: 'code', title: '编码' },
-  { dataIndex: 'is_active', title: '状态', width: 90 },
-  { dataIndex: 'actions', fixed: 'right', title: '操作', width: 140 },
-];
-
-const itemColumns: TableColumnsType<DictionaryItemRecord> = [
-  { dataIndex: 'label', title: '标签' },
-  { dataIndex: 'value', title: '值' },
-  { dataIndex: 'color', title: '颜色', width: 120 },
-  { dataIndex: 'sort', title: '排序', width: 90 },
-  { dataIndex: 'is_active', title: '状态', width: 90 },
-  { dataIndex: 'actions', fixed: 'right', title: '操作', width: 140 },
-];
-
-function resetTypeForm() {
-  typeForm.code = '';
-  typeForm.description = '';
-  typeForm.is_active = true;
-  typeForm.name = '';
+async function onItemStatusChange(
+  newStatus: boolean,
+  row: DictionaryItemRecord,
+) {
+  try {
+    await confirmAction(
+      `确认将字典项 ${row.label} 的状态切换为【${newStatus ? '启用' : '禁用'}】吗？`,
+      '切换状态',
+    );
+    await updateDictionaryItemApi(row.id, { is_active: newStatus });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
-function resetItemForm() {
-  itemForm.color = '';
-  itemForm.extra_data = '';
-  itemForm.is_active = true;
-  itemForm.label = '';
-  itemForm.sort = 0;
-  itemForm.value = '';
+function onItemActionClick({
+  code,
+  row,
+}: OnActionClickParams<DictionaryItemRecord>) {
+  switch (code) {
+    case 'delete': {
+      void onDeleteItem(row);
+      break;
+    }
+    case 'edit': {
+      if (!selectedType.value) return;
+      itemFormDrawerApi
+        .setData({ record: row, typeId: selectedType.value.id })
+        .open();
+      break;
+    }
+  }
 }
+
+async function onDeleteType(row: DictionaryTypeRecord) {
+  try {
+    await confirmAction(`确认删除字典类型 ${row.name} 吗？`, '删除字典类型');
+  } catch {
+    return;
+  }
+
+  const hideLoading = message.loading({
+    content: `正在删除 ${row.name}`,
+    duration: 0,
+    key: 'dict_type_delete',
+  });
+  try {
+    await deleteDictionaryTypeApi(row.id);
+    if (selectedType.value?.id === row.id) {
+      selectedType.value = undefined;
+    }
+    message.success({
+      content: `${row.name} 已删除`,
+      key: 'dict_type_delete',
+    });
+    await loadTypes();
+    itemGridApi.query();
+  } catch {
+    hideLoading();
+  }
+}
+
+async function onDeleteItem(row: DictionaryItemRecord) {
+  const hideLoading = message.loading({
+    content: `正在删除 ${row.label}`,
+    duration: 0,
+    key: 'dict_item_delete',
+  });
+  try {
+    await deleteDictionaryItemApi(row.id);
+    message.success({
+      content: `${row.label} 已删除`,
+      key: 'dict_item_delete',
+    });
+    onRefreshItems();
+  } catch {
+    hideLoading();
+  }
+}
+
+const [ItemGrid, itemGridApi] = useVbenVxeGrid({
+  formOptions: {
+    schema: useItemGridFormSchema(),
+    submitOnChange: true,
+  },
+  gridOptions: {
+    columns: useItemColumns(onItemActionClick, onItemStatusChange),
+    height: 'auto',
+    keepSource: true,
+    proxyConfig: {
+      ajax: {
+        query: async ({ page }, formValues) => {
+          if (!selectedType.value) {
+            return { items: [], total: 0 };
+          }
+          return await listDictionaryItemsApi({
+            keyword: buildKeyword(formValues.keyword) || undefined,
+            page: page.currentPage,
+            page_size: page.pageSize,
+            type_id: selectedType.value.id,
+          });
+        },
+      },
+    },
+    rowConfig: {
+      keyField: 'id',
+    },
+    toolbarConfig: {
+      custom: true,
+      export: false,
+      refresh: true,
+      search: true,
+      zoom: true,
+    },
+  } as VxeTableGridOptions<DictionaryItemRecord>,
+});
+
+watch(selectedType, () => {
+  itemGridApi.query();
+});
 
 async function loadTypes() {
   typeLoading.value = true;
   try {
     const result = await listDictionaryTypesApi({
-      keyword: typeQuery.keyword || undefined,
-      page: typeQuery.page,
-      page_size: typeQuery.pageSize,
+      page: 1,
+      page_size: 500,
     });
-    dictionaryTypes.value = result.items;
-    typeQuery.total = result.total;
+    allTypes.value = result.items;
+
+    if (selectedType.value) {
+      selectedType.value = result.items.find(
+        (type) => type.id === selectedType.value?.id,
+      );
+    }
     if (!selectedType.value && result.items.length > 0) {
-      selectedType.value = result.items[0]!;
-      await loadItems();
+      selectedType.value = result.items[0];
     }
   } finally {
     typeLoading.value = false;
   }
 }
 
-async function loadItems() {
-  if (!selectedType.value) {
-    dictionaryItems.value = [];
-    itemQuery.total = 0;
-    return;
-  }
-  itemLoading.value = true;
-  try {
-    const result = await listDictionaryItemsApi({
-      keyword: itemQuery.keyword || undefined,
-      page: itemQuery.page,
-      page_size: itemQuery.pageSize,
-      type_id: selectedType.value.id,
-    });
-    dictionaryItems.value = result.items;
-    itemQuery.total = result.total;
-  } finally {
-    itemLoading.value = false;
-  }
-}
-
 function selectType(type: DictionaryTypeRecord) {
   selectedType.value = type;
-  itemQuery.page = 1;
-  void loadItems();
 }
 
-function openCreateType() {
-  editingType.value = null;
-  resetTypeForm();
-  typeModalOpen.value = true;
-}
-
-function openEditType(type: DictionaryTypeRecord) {
-  editingType.value = type;
-  typeForm.code = type.code;
-  typeForm.description = type.description || '';
-  typeForm.is_active = !!type.is_active;
-  typeForm.name = type.name;
-  typeModalOpen.value = true;
-}
-
-async function saveType() {
-  if (!typeForm.code || !typeForm.name) {
-    message.warning('请输入字典名称和编码');
-    return;
-  }
-  saving.value = true;
-  try {
-    if (editingType.value) {
-      await updateDictionaryTypeApi(editingType.value.id, { ...typeForm });
-      message.success('字典类型已更新');
-    } else {
-      await createDictionaryTypeApi({ ...typeForm });
-      message.success('字典类型已创建');
+function onTypeMenuClick(
+  type: DictionaryTypeRecord,
+  info: { key: string },
+) {
+  switch (info.key) {
+    case 'delete': {
+      void onDeleteType(type);
+      break;
     }
-    typeModalOpen.value = false;
-    await loadTypes();
-  } finally {
-    saving.value = false;
+    case 'edit': {
+      typeFormDrawerApi.setData(type).open();
+      break;
+    }
   }
 }
 
-function openCreateItem() {
+function onRefreshTypes() {
+  void loadTypes();
+}
+
+function onRefreshItems() {
+  itemGridApi.query();
+}
+
+function onCreateType() {
+  typeFormDrawerApi.setData(undefined).open();
+}
+
+function onCreateItem() {
   if (!selectedType.value) {
     message.warning('请先选择字典类型');
     return;
   }
-  editingItem.value = null;
-  resetItemForm();
-  itemModalOpen.value = true;
-}
-
-function openEditItem(item: DictionaryItemRecord) {
-  editingItem.value = item;
-  itemForm.color = item.color || '';
-  itemForm.extra_data = item.extra_data || '';
-  itemForm.is_active = !!item.is_active;
-  itemForm.label = item.label;
-  itemForm.sort = item.sort ?? 0;
-  itemForm.value = item.value;
-  itemModalOpen.value = true;
-}
-
-async function saveItem() {
-  if (!selectedType.value || !itemForm.label || !itemForm.value) {
-    message.warning('请输入字典项标签和值');
-    return;
-  }
-  saving.value = true;
-  try {
-    const payload = {
-      ...itemForm,
-      color: itemForm.color || undefined,
-      extra_data: itemForm.extra_data || undefined,
-      type_id: selectedType.value.id,
-    };
-    if (editingItem.value) {
-      await updateDictionaryItemApi(editingItem.value.id, payload);
-      message.success('字典项已更新');
-    } else {
-      await createDictionaryItemApi(payload);
-      message.success('字典项已创建');
-    }
-    itemModalOpen.value = false;
-    await loadItems();
-  } finally {
-    saving.value = false;
-  }
-}
-
-function confirmDeleteType(type: DictionaryTypeRecord) {
-  AModal.confirm({
-    content: `确认删除字典类型 ${type.name}？`,
-    okText: '删除',
-    okType: 'danger',
-    title: '删除字典类型',
-    async onOk() {
-      await deleteDictionaryTypeApi(type.id);
-      if (selectedType.value?.id === type.id) selectedType.value = null;
-      message.success('字典类型已删除');
-      await loadTypes();
-      await loadItems();
-    },
-  });
-}
-
-function confirmDeleteItem(item: DictionaryItemRecord) {
-  AModal.confirm({
-    content: `确认删除字典项 ${item.label}？`,
-    okText: '删除',
-    okType: 'danger',
-    title: '删除字典项',
-    async onOk() {
-      await deleteDictionaryItemApi(item.id);
-      message.success('字典项已删除');
-      await loadItems();
-    },
-  });
-}
-
-function asTypeRecord(record: Record<string, any>) {
-  return record as DictionaryTypeRecord;
-}
-
-function asItemRecord(record: Record<string, any>) {
-  return record as DictionaryItemRecord;
-}
-
-function getTypeRowClass(record: DictionaryTypeRecord) {
-  return record.id === selectedType.value?.id ? 'bg-primary/5' : '';
-}
-
-function getTypeRow(record: DictionaryTypeRecord) {
-  return {
-    onClick: () => selectType(record),
-  };
+  itemFormDrawerApi.setData({ typeId: selectedType.value.id }).open();
 }
 
 onMounted(loadTypes);
 </script>
 
 <template>
-  <div class="grid gap-4 p-4 xl:grid-cols-[minmax(360px,0.8fr)_1.2fr]">
-    <section>
-      <div class="mb-4 flex flex-wrap items-center gap-3">
-        <a-input-search
-          v-model:value="typeQuery.keyword"
+  <Page auto-content-height>
+    <TypeFormDrawer @success="onRefreshTypes" />
+    <ItemFormDrawer @success="onRefreshItems" />
+    <div class="flex size-full">
+      <Card class="flex w-1/6 min-w-[260px] flex-col">
+        <div class="mb-3 flex items-center justify-between">
+          <span class="font-medium">字典类型</span>
+          <Button size="small" type="primary" @click="onCreateType">
+            <Plus class="size-4" />
+          </Button>
+        </div>
+        <InputSearch
+          v-model:value="typeSearchValue"
           allow-clear
-          class="max-w-72"
-          placeholder="搜索字典名称或编码"
-          @search="() => { typeQuery.page = 1; void loadTypes(); }"
+          class="mb-3"
+          placeholder="搜索字典类型"
         />
-        <a-button type="primary" @click="openCreateType">新增类型</a-button>
-        <a-button @click="loadTypes">刷新</a-button>
-      </div>
-
-      <a-table
-        :columns="typeColumns"
-        :data-source="dictionaryTypes"
-        :loading="typeLoading"
-        :pagination="{
-          current: typeQuery.page,
-          pageSize: typeQuery.pageSize,
-          showSizeChanger: true,
-          total: typeQuery.total,
-        }"
-        row-key="id"
-        :row-class-name="getTypeRowClass"
-        @change="(pagination) => {
-          typeQuery.page = pagination.current || 1;
-          typeQuery.pageSize = pagination.pageSize || 20;
-          void loadTypes();
-        }"
-        @row="getTypeRow"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.dataIndex === 'is_active'">
-            <a-tag :color="record.is_active ? 'green' : 'red'">
-              {{ record.is_active ? '启用' : '禁用' }}
-            </a-tag>
-          </template>
-          <template v-else-if="column.dataIndex === 'actions'">
-            <a-space>
-              <a-button size="small" type="link" @click.stop="openEditType(asTypeRecord(record))">
-                编辑
-              </a-button>
-              <a-button
-                danger
-                size="small"
-                type="link"
-                @click.stop="confirmDeleteType(asTypeRecord(record))"
+        <Spin :spinning="typeLoading">
+          <div class="max-h-[calc(100vh-280px)] overflow-y-auto">
+            <Empty
+              v-if="!filteredTypes.length"
+              :image="Empty.PRESENTED_IMAGE_SIMPLE"
+              description="暂无字典类型"
+            />
+            <div
+              v-for="type in filteredTypes"
+              :key="type.id"
+              class="group mb-1 flex items-center justify-between rounded-md px-2 py-2 text-sm transition-colors"
+              :class="
+                selectedType?.id === type.id
+                  ? 'bg-accent'
+                  : 'hover:bg-accent/50'
+              "
+            >
+              <div
+                class="min-w-0 flex-1 cursor-pointer"
+                @click="selectType(type)"
               >
-                删除
-              </a-button>
-            </a-space>
-          </template>
-        </template>
-      </a-table>
-    </section>
+                <div class="flex items-center gap-2">
+                  <span class="truncate font-medium">{{ type.name }}</span>
+                  <Tag v-if="!type.is_active" color="default">禁用</Tag>
+                </div>
+                <div class="truncate text-xs text-muted-foreground">
+                  {{ type.code }}
+                </div>
+              </div>
+              <Dropdown placement="bottomRight" :trigger="['click']">
+                <Button
+                  class="shrink-0"
+                  :class="
+                    selectedType?.id === type.id
+                      ? 'opacity-100'
+                      : 'opacity-0 group-hover:opacity-100'
+                  "
+                  size="small"
+                  type="text"
+                >
+                  <IconifyIcon
+                    class="size-4"
+                    icon="lucide:ellipsis-vertical"
+                  />
+                </Button>
+                <template #overlay>
+                  <Menu @click="(info) => onTypeMenuClick(type, info)">
+                    <Menu.Item key="edit">编辑</Menu.Item>
+                    <Menu.Item key="delete" danger>删除</Menu.Item>
+                  </Menu>
+                </template>
+              </Dropdown>
+            </div>
+          </div>
+        </Spin>
+      </Card>
 
-    <section>
-      <div class="mb-4 flex flex-wrap items-center gap-3">
-        <a-input-search
-          v-model:value="itemQuery.keyword"
-          allow-clear
-          class="max-w-72"
-          placeholder="搜索字典项标签或值"
-          @search="() => { itemQuery.page = 1; void loadItems(); }"
-        />
-        <a-button type="primary" :disabled="!selectedType" @click="openCreateItem">
-          新增字典项
-        </a-button>
-        <a-button :disabled="!selectedType" @click="loadItems">刷新</a-button>
-        <span class="text-sm text-muted-foreground">
-          当前字典：{{ selectedType?.name || '-' }}
-        </span>
+      <div class="ml-4 w-5/6 min-w-0">
+        <ItemGrid :table-title="itemTableTitle">
+          <template #toolbar-tools>
+            <Button
+              :disabled="!selectedType"
+              type="primary"
+              @click="onCreateItem"
+            >
+              <Plus class="size-5" />
+              新增字典项
+            </Button>
+          </template>
+          <template #color="{ row }">
+            <div v-if="row.color" class="flex items-center justify-center gap-2">
+              <span
+                class="inline-block size-4 shrink-0 rounded-full border"
+                :style="{ backgroundColor: row.color }"
+              />
+              <span class="truncate">{{ row.color }}</span>
+            </div>
+            <span v-else class="text-muted-foreground">-</span>
+          </template>
+        </ItemGrid>
       </div>
-
-      <a-table
-        :columns="itemColumns"
-        :data-source="dictionaryItems"
-        :loading="itemLoading"
-        :pagination="{
-          current: itemQuery.page,
-          pageSize: itemQuery.pageSize,
-          showSizeChanger: true,
-          total: itemQuery.total,
-        }"
-        row-key="id"
-        @change="(pagination) => {
-          itemQuery.page = pagination.current || 1;
-          itemQuery.pageSize = pagination.pageSize || 20;
-          void loadItems();
-        }"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.dataIndex === 'color'">
-            <a-tag :color="record.color || 'default'">{{ record.color || '-' }}</a-tag>
-          </template>
-          <template v-else-if="column.dataIndex === 'is_active'">
-            <a-tag :color="record.is_active ? 'green' : 'red'">
-              {{ record.is_active ? '启用' : '禁用' }}
-            </a-tag>
-          </template>
-          <template v-else-if="column.dataIndex === 'actions'">
-            <a-space>
-              <a-button size="small" type="link" @click="openEditItem(asItemRecord(record))">
-                编辑
-              </a-button>
-              <a-button
-                danger
-                size="small"
-                type="link"
-                @click="confirmDeleteItem(asItemRecord(record))"
-              >
-                删除
-              </a-button>
-            </a-space>
-          </template>
-        </template>
-      </a-table>
-    </section>
-
-    <a-modal
-      v-model:open="typeModalOpen"
-      :confirm-loading="saving"
-      :title="editingType ? '编辑字典类型' : '新增字典类型'"
-      @ok="saveType"
-    >
-      <a-form :label-col="{ span: 6 }" :model="typeForm">
-        <a-form-item label="字典名称" required>
-          <a-input v-model:value="typeForm.name" />
-        </a-form-item>
-        <a-form-item label="字典编码" required>
-          <a-input v-model:value="typeForm.code" />
-        </a-form-item>
-        <a-form-item label="描述">
-          <a-textarea v-model:value="typeForm.description" :rows="3" />
-        </a-form-item>
-        <a-form-item label="启用">
-          <a-switch v-model:checked="typeForm.is_active" />
-        </a-form-item>
-      </a-form>
-    </a-modal>
-
-    <a-modal
-      v-model:open="itemModalOpen"
-      :confirm-loading="saving"
-      :title="editingItem ? '编辑字典项' : '新增字典项'"
-      @ok="saveItem"
-    >
-      <a-form :label-col="{ span: 6 }" :model="itemForm">
-        <a-form-item label="标签" required>
-          <a-input v-model:value="itemForm.label" />
-        </a-form-item>
-        <a-form-item label="值" required>
-          <a-input v-model:value="itemForm.value" />
-        </a-form-item>
-        <a-form-item label="颜色">
-          <a-input v-model:value="itemForm.color" />
-        </a-form-item>
-        <a-form-item label="排序">
-          <a-input-number v-model:value="itemForm.sort" class="w-full" />
-        </a-form-item>
-        <a-form-item label="启用">
-          <a-switch v-model:checked="itemForm.is_active" />
-        </a-form-item>
-        <a-form-item label="扩展数据">
-          <a-textarea v-model:value="itemForm.extra_data" :rows="3" />
-        </a-form-item>
-      </a-form>
-    </a-modal>
-  </div>
+    </div>
+  </Page>
 </template>

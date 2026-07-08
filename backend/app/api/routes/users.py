@@ -43,7 +43,11 @@ router = APIRouter(prefix="/users", tags=["users"])
     response_model=UsersPublic,
 )
 def read_users(
-    session: SessionDep, page: int = 1, page_size: int = 20, keyword: str | None = None
+    session: SessionDep,
+    page: int = 1,
+    page_size: int = 20,
+    keyword: str | None = None,
+    department_id: uuid.UUID | None = None,
 ) -> Any:
     """
     Retrieve users.
@@ -55,6 +59,8 @@ def read_users(
         filters.append(
             or_(col(User.email).ilike(pattern), col(User.full_name).ilike(pattern))
         )
+    if department_id:
+        filters.append(col(User.department_id) == department_id)
 
     count_statement = select(func.count()).select_from(User)
     if filters:

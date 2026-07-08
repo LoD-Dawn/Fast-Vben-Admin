@@ -13,6 +13,7 @@ import { $t, setupI18n } from '#/locales';
 
 import { initComponentAdapter } from './adapter/component';
 import { initSetupVbenForm } from './adapter/form';
+import './adapter/vxe-table';
 import App from './app.vue';
 import { router } from './router';
 

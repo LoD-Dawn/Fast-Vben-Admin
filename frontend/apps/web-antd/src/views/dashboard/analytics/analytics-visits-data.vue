@@ -1,40 +1,57 @@
 <script lang="ts" setup>
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
-import { onMounted, ref } from 'vue';
+import type { DashboardRadarSeries } from '#/api';
+
+import { computed, onMounted, ref, watch } from 'vue';
 
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
+
+const props = withDefaults(
+  defineProps<{
+    data?: DashboardRadarSeries[];
+  }>(),
+  {
+    data: () => [],
+  },
+);
 
 const chartRef = ref<EchartsUIType>();
 const { renderEcharts } = useEcharts(chartRef);
 
-onMounted(() => {
+const DEVICE_CATEGORIES = ['网页', '移动端', 'Ipad', '客户端', '第三方', '其它'];
+const SERIES_COLORS = ['#b6a2de', '#5ab1ef'];
+
+const chartData = computed(() => {
+  const series = props.data.length
+    ? props.data
+    : [
+        { name: '访问', values: Array.from({ length: 6 }, () => 0) },
+        { name: '趋势', values: Array.from({ length: 6 }, () => 0) },
+      ];
+
+  const maxValue = Math.max(
+    ...series.flatMap((item) => item.values),
+    1,
+  );
+
+  return {
+    maxValue,
+    series,
+  };
+});
+
+function renderChart() {
   renderEcharts({
     legend: {
       bottom: 0,
-      data: ['访问', '趋势'],
+      data: chartData.value.series.map((item) => item.name),
     },
     radar: {
-      indicator: [
-        {
-          name: '网页',
-        },
-        {
-          name: '移动端',
-        },
-        {
-          name: 'Ipad',
-        },
-        {
-          name: '客户端',
-        },
-        {
-          name: '第三方',
-        },
-        {
-          name: '其它',
-        },
-      ],
+      indicator: DEVICE_CATEGORIES.map((name) => ({
+        max: chartData.value.maxValue,
+        name,
+      })),
       radius: '60%',
       splitNumber: 8,
     },
@@ -47,24 +64,14 @@ onMounted(() => {
           shadowOffsetX: 0,
           shadowOffsetY: 10,
         },
-        data: [
-          {
-            itemStyle: {
-              color: '#b6a2de',
-            },
-            name: '访问',
-            value: [90, 50, 86, 40, 50, 20],
+        data: chartData.value.series.map((item, index) => ({
+          itemStyle: {
+            color: SERIES_COLORS[index % SERIES_COLORS.length],
           },
-          {
-            itemStyle: {
-              color: '#5ab1ef',
-            },
-            name: '趋势',
-            value: [70, 75, 70, 76, 20, 85],
-          },
-        ],
+          name: item.name,
+          value: item.values,
+        })),
         itemStyle: {
-          // borderColor: '#fff',
           borderRadius: 10,
           borderWidth: 2,
         },
@@ -74,7 +81,17 @@ onMounted(() => {
     ],
     tooltip: {},
   });
-});
+}
+
+onMounted(renderChart);
+
+watch(
+  () => props.data,
+  () => {
+    renderChart();
+  },
+  { deep: true },
+);
 </script>
 
 <template>

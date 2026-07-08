@@ -21,6 +21,34 @@ function normalizeComponent(component?: null | string) {
   return component?.replace(/^#/, '');
 }
 
+/** 兼容数据库中仍使用中文标题的旧菜单数据 */
+const LEGACY_MENU_TITLE_KEYS: Record<string, string> = {
+  业务示例: 'menu.items',
+  任务示例: 'menu.items',
+  仪表盘: 'menu.dashboard',
+  参数配置: 'menu.systemSettings',
+  字典管理: 'menu.systemDictionaries',
+  文件管理: 'menu.files',
+  日志审计: 'menu.logs',
+  操作日志: 'menu.operationLogs',
+  用户管理: 'menu.systemUsers',
+  登录日志: 'menu.loginLogs',
+  示例资源: 'menu.items',
+  系统管理: 'menu.system',
+  菜单管理: 'menu.systemMenus',
+  角色管理: 'menu.systemRoles',
+  部门管理: 'menu.systemDepartments',
+  我的消息: 'menu.messages',
+  通知公告: 'menu.notices',
+};
+
+function resolveMenuTitle(title: string) {
+  if (title.includes('.')) {
+    return title;
+  }
+  return LEGACY_MENU_TITLE_KEYS[title] ?? title;
+}
+
 function toRoute(menu: BackendMenuRoute): RouteRecordStringComponent {
   return {
     children: [],
@@ -31,7 +59,7 @@ function toRoute(menu: BackendMenuRoute): RouteRecordStringComponent {
       authority: menu.permission_code ? [menu.permission_code] : undefined,
       icon: menu.icon || undefined,
       order: menu.sort,
-      title: menu.title,
+      title: resolveMenuTitle(menu.title),
     },
     name: menu.route_name || menu.name || menu.id,
     path: menu.route_path || menu.path || '/',

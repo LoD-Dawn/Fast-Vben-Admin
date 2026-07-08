@@ -12,7 +12,18 @@ const { $t } = useSimpleLocale();
 
 const [rootProps, form] = injectFormProps();
 
+const props = defineProps<{
+  shouldShowCollapseButton?: boolean;
+}>();
+
 const collapsed = defineModel({ default: false });
+
+const visibleCollapseButton = computed(() => {
+  if (props.shouldShowCollapseButton !== undefined) {
+    return props.shouldShowCollapseButton;
+  }
+  return !!unref(rootProps).showCollapseButton;
+});
 
 const resetButtonOptions = computed(() => {
   return {
@@ -172,7 +183,7 @@ defineExpose({
 
     <VbenExpandableArrow
       class="ml-[-0.3em]"
-      v-if="rootProps.showCollapseButton"
+      v-if="visibleCollapseButton"
       v-model:model-value="collapsed"
     >
       <span>{{ collapsed ? $t('expand') : $t('collapse') }}</span>

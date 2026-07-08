@@ -55,7 +55,7 @@ def test_superuser_can_create_role_and_assign_menus(
         headers=superuser_token_headers,
         json={
             "code": role_code,
-            "name": "测试角色",
+            "name": f"测试角色_{role_code}",
             "description": "RBAC test role",
             "sort": 90,
             "is_active": True,
@@ -67,32 +67,39 @@ def test_superuser_can_create_role_and_assign_menus(
     role = create_role_response.json()
     assert role["code"] == role_code
 
-    menus_response = client.get(
-        f"{settings.API_V1_STR}/menus",
-        headers=superuser_token_headers,
-    )
-    assert menus_response.status_code == 200
-    menu_ids = [
-        menu["id"]
-        for menu in menus_response.json()["items"]
-        if menu["permission_code"] in {"system:user:list", "system:role:list"}
-    ]
-    assert len(menu_ids) == 2
+    try:
+        menus_response = client.get(
+            f"{settings.API_V1_STR}/menus",
+            headers=superuser_token_headers,
+        )
+        assert menus_response.status_code == 200
+        menu_ids = [
+            menu["id"]
+            for menu in menus_response.json()["items"]
+            if menu["permission_code"] in {"system:user:list", "system:role:list"}
+        ]
+        assert len(menu_ids) == 2
 
-    assign_response = client.put(
-        f"{settings.API_V1_STR}/roles/{role['id']}/menus",
-        headers=superuser_token_headers,
-        json={"menu_ids": menu_ids},
-    )
-    assert assign_response.status_code == 200
-    assert set(assign_response.json()) == set(menu_ids)
+        assign_response = client.put(
+            f"{settings.API_V1_STR}/roles/{role['id']}/menus",
+            headers=superuser_token_headers,
+            json={"menu_ids": menu_ids},
+        )
+        assert assign_response.status_code == 200
+        assert set(assign_response.json()) == set(menu_ids)
 
-    read_response = client.get(
-        f"{settings.API_V1_STR}/roles/{role['id']}/menus",
-        headers=superuser_token_headers,
-    )
-    assert read_response.status_code == 200
-    assert set(read_response.json()) == set(menu_ids)
+        read_response = client.get(
+            f"{settings.API_V1_STR}/roles/{role['id']}/menus",
+            headers=superuser_token_headers,
+        )
+        assert read_response.status_code == 200
+        assert set(read_response.json()) == set(menu_ids)
+    finally:
+        delete_response = client.delete(
+            f"{settings.API_V1_STR}/roles/{role['id']}",
+            headers=superuser_token_headers,
+        )
+        assert delete_response.status_code == 204
 
 
 def test_superuser_can_create_department(
@@ -104,7 +111,7 @@ def test_superuser_can_create_department(
         headers=superuser_token_headers,
         json={
             "code": department_code,
-            "name": "测试部门",
+            "name": f"测试部门_{department_code}",
             "sort": 10,
             "is_active": True,
         },
@@ -113,4 +120,10 @@ def test_superuser_can_create_department(
     assert response.status_code == 200
     department = response.json()
     assert department["code"] == department_code
-    assert department["name"] == "测试部门"
+    assert department["name"] == f"测试部门_{department_code}"
+
+    delete_response = client.delete(
+        f"{settings.API_V1_STR}/departments/{department['id']}",
+        headers=superuser_token_headers,
+    )
+    assert delete_response.status_code == 204

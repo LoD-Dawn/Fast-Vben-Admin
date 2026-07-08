@@ -12,6 +12,7 @@ export type UserRecord = UserPublic;
 export type UserListResult = UsersPublic;
 
 export interface UserListParams {
+  department_id?: string;
   keyword?: string;
   page?: number;
   page_size?: number;

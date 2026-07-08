@@ -54,7 +54,8 @@ const wrapperClass = computed(() => {
 provideFormRenderProps(props);
 
 // @ts-expect-error unused
-const { isCalculated, keepFormItemIndex, wrapperRef } = useExpandable(props);
+const { isCalculated, keepFormItemIndex, shouldShowCollapseButton, wrapperRef } =
+  useExpandable(props);
 
 const shapes = computed(() => {
   const resultShapes: FormShape[] = [];
@@ -186,7 +187,7 @@ const computedSchema = computed(
           </template>
         </FormField>
       </template>
-      <slot :shapes="shapes"></slot>
+      <slot :shapes="shapes" :should-show-collapse-button="shouldShowCollapseButton"></slot>
     </div>
   </component>
 </template>

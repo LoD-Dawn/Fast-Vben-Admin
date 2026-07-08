@@ -1,14 +1,47 @@
 <script lang="ts" setup>
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
-import { onMounted, ref } from 'vue';
+import type { DashboardHourlyTrend } from '#/api';
+
+import { computed, onMounted, ref, watch } from 'vue';
 
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
+
+const props = withDefaults(
+  defineProps<{
+    data?: DashboardHourlyTrend[];
+  }>(),
+  {
+    data: () => [],
+  },
+);
 
 const chartRef = ref<EchartsUIType>();
 const { renderEcharts } = useEcharts(chartRef);
 
-onMounted(() => {
+const chartData = computed(() => {
+  const trends = props.data.length
+    ? props.data
+    : Array.from({ length: 18 }, (_, index) => ({
+        hour: `${index + 6}:00`,
+        login_count: 0,
+        operation_count: 0,
+      }));
+
+  const loginSeries = trends.map((item) => item.login_count);
+  const operationSeries = trends.map((item) => item.operation_count);
+  const maxValue = Math.max(...loginSeries, ...operationSeries, 10);
+  const yMax = Math.ceil(maxValue / 4) * 4 || 10;
+
+  return {
+    hours: trends.map((item) => item.hour),
+    loginSeries,
+    operationSeries,
+    yMax,
+  };
+});
+
+function renderChart() {
   renderEcharts({
     grid: {
       bottom: 0,
@@ -20,11 +53,7 @@ onMounted(() => {
     series: [
       {
         areaStyle: {},
-        data: [
-          111, 2000, 6000, 16_000, 33_333, 55_555, 64_000, 33_333, 18_000,
-          36_000, 70_000, 42_444, 23_222, 13_000, 8000, 4000, 1200, 333, 222,
-          111,
-        ],
+        data: chartData.value.loginSeries,
         itemStyle: {
           color: '#5ab1ef',
         },
@@ -33,10 +62,7 @@ onMounted(() => {
       },
       {
         areaStyle: {},
-        data: [
-          33, 66, 88, 333, 3333, 6200, 20_000, 3000, 1200, 13_000, 22_000,
-          11_000, 2221, 1201, 390, 198, 60, 30, 22, 11,
-        ],
+        data: chartData.value.operationSeries,
         itemStyle: {
           color: '#019680',
         },
@@ -53,20 +79,12 @@ onMounted(() => {
       },
       trigger: 'axis',
     },
-    // xAxis: {
-    //   axisTick: {
-    //     show: false,
-    //   },
-    //   boundaryGap: false,
-    //   data: Array.from({ length: 18 }).map((_item, index) => `${index + 6}:00`),
-    //   type: 'category',
-    // },
     xAxis: {
       axisTick: {
         show: false,
       },
       boundaryGap: false,
-      data: Array.from({ length: 18 }).map((_item, index) => `${index + 6}:00`),
+      data: chartData.value.hours,
       splitLine: {
         lineStyle: {
           type: 'solid',
@@ -81,7 +99,7 @@ onMounted(() => {
         axisTick: {
           show: false,
         },
-        max: 80_000,
+        max: chartData.value.yMax,
         splitArea: {
           show: true,
         },
@@ -90,7 +108,17 @@ onMounted(() => {
       },
     ],
   });
-});
+}
+
+onMounted(renderChart);
+
+watch(
+  () => props.data,
+  () => {
+    renderChart();
+  },
+  { deep: true },
+);
 </script>
 
 <template>

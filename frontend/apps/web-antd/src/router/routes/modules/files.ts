@@ -7,7 +7,7 @@ const routes: RouteRecordRaw[] = [
       authority: ['system:file:list'],
       icon: 'lucide:folder',
       order: 25,
-      title: '文件管理',
+      title: 'menu.files',
     },
     name: 'Files',
     path: '/files',

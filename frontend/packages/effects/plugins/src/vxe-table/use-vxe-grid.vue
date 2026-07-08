@@ -145,6 +145,7 @@ const [Form, formApi] = useTableForm({
     },
   },
   showCollapseButton: true,
+  collapsed: true,
   submitButtonOptions: {
     content: computed(() => $t('common.search')),
   },
@@ -370,6 +371,7 @@ watch(
       );
       return {
         ...finalFormOptions,
+        collapsed: finalFormOptions.collapsed ?? true,
         collapseTriggerResize: !!finalFormOptions.showCollapseButton,
       };
     });

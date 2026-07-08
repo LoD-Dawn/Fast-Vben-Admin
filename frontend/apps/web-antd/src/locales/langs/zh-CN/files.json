@@ -1,0 +1,14 @@
+{
+  "fileName": "文件名",
+  "extension": "扩展名",
+  "contentType": "类型",
+  "size": "大小",
+  "storage": "存储",
+  "public": "公开",
+  "uploadedAt": "上传时间",
+  "download": "下载",
+  "item": "文件",
+  "searchPlaceholder": "搜索文件名、类型或扩展名",
+  "keyword": "关键词",
+  "operation": "操作"
+}

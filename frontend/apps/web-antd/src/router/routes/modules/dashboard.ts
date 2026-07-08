@@ -2,11 +2,13 @@ import type { RouteRecordRaw } from 'vue-router';
 
 const routes: RouteRecordRaw[] = [
   {
-    component: () => import('#/views/dashboard/index.vue'),
+    component: () => import('#/views/dashboard/analytics/index.vue'),
     meta: {
+      affixTab: true,
       icon: 'lucide:layout-dashboard',
+      keepAlive: true,
       order: -1,
-      title: '仪表盘',
+      title: 'menu.dashboard',
     },
     name: 'Dashboard',
     path: '/dashboard',

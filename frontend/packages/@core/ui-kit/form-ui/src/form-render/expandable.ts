@@ -101,5 +101,19 @@ export function useExpandable(props: FormRenderProps) {
     calculateRowMapping();
   });
 
-  return { isCalculated, keepFormItemIndex, wrapperRef };
+  const shouldShowCollapseButton = computed(() => {
+    if (!props.showCollapseButton) {
+      return false;
+    }
+    const schemaLength = props.schema?.length ?? 0;
+    if (schemaLength <= 1) {
+      return false;
+    }
+    if (!isCalculated.value) {
+      return false;
+    }
+    return schemaLength > keepFormItemIndex.value;
+  });
+
+  return { isCalculated, keepFormItemIndex, shouldShowCollapseButton, wrapperRef };
 }

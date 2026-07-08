@@ -4,6 +4,23 @@ from app.core.config import settings
 from tests.utils.utils import random_lower_string
 
 
+def _delete_dictionary_type(
+    client: TestClient,
+    headers: dict[str, str],
+    type_id: str,
+    item_id: str | None = None,
+) -> None:
+    if item_id:
+        client.delete(
+            f"{settings.API_V1_STR}/dictionary-items/{item_id}",
+            headers=headers,
+        )
+    client.delete(
+        f"{settings.API_V1_STR}/dictionary-types/{type_id}",
+        headers=headers,
+    )
+
+
 def test_superuser_can_read_seeded_dictionary_items(
     client: TestClient, superuser_token_headers: dict[str, str]
 ) -> None:
@@ -33,43 +50,56 @@ def test_superuser_can_create_dictionary_type_and_item(
     client: TestClient, superuser_token_headers: dict[str, str]
 ) -> None:
     dictionary_code = f"dict_{random_lower_string()}"
-    create_type_response = client.post(
-        f"{settings.API_V1_STR}/dictionary-types",
-        headers=superuser_token_headers,
-        json={
-            "code": dictionary_code,
-            "name": "测试字典",
-            "description": "Dictionary test",
-            "is_active": True,
-        },
-    )
+    type_id: str | None = None
+    item_id: str | None = None
+    try:
+        create_type_response = client.post(
+            f"{settings.API_V1_STR}/dictionary-types",
+            headers=superuser_token_headers,
+            json={
+                "code": dictionary_code,
+                "name": "测试字典",
+                "description": "Dictionary test",
+                "is_active": True,
+            },
+        )
 
-    assert create_type_response.status_code == 200
-    dictionary_type = create_type_response.json()
-    assert dictionary_type["code"] == dictionary_code
+        assert create_type_response.status_code == 200
+        dictionary_type = create_type_response.json()
+        type_id = dictionary_type["id"]
+        assert dictionary_type["code"] == dictionary_code
 
-    create_item_response = client.post(
-        f"{settings.API_V1_STR}/dictionary-items",
-        headers=superuser_token_headers,
-        json={
-            "type_id": dictionary_type["id"],
-            "label": "测试项",
-            "value": "test",
-            "color": "blue",
-            "sort": 0,
-            "is_active": True,
-        },
-    )
-    assert create_item_response.status_code == 200
-    item = create_item_response.json()
-    assert item["value"] == "test"
+        create_item_response = client.post(
+            f"{settings.API_V1_STR}/dictionary-items",
+            headers=superuser_token_headers,
+            json={
+                "type_id": type_id,
+                "label": "测试项",
+                "value": "test",
+                "color": "blue",
+                "sort": 0,
+                "is_active": True,
+            },
+        )
+        assert create_item_response.status_code == 200
+        item = create_item_response.json()
+        item_id = item["id"]
+        assert item["value"] == "test"
 
-    public_items_response = client.get(
-        f"{settings.API_V1_STR}/dictionaries/{dictionary_code}/items",
-        headers=superuser_token_headers,
-    )
-    assert public_items_response.status_code == 200
-    assert public_items_response.json()[0]["label"] == "测试项"
+        public_items_response = client.get(
+            f"{settings.API_V1_STR}/dictionaries/{dictionary_code}/items",
+            headers=superuser_token_headers,
+        )
+        assert public_items_response.status_code == 200
+        assert public_items_response.json()[0]["label"] == "测试项"
+    finally:
+        if type_id:
+            _delete_dictionary_type(
+                client,
+                superuser_token_headers,
+                type_id,
+                item_id,
+            )
 
 
 def test_superuser_can_read_and_update_settings(

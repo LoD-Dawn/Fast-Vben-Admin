@@ -1,0 +1,25 @@
+{
+  "login": {
+    "user": "User",
+    "ip": "IP Address",
+    "status": "Status",
+    "failureReason": "Failure Reason",
+    "userAgent": "Browser",
+    "createdAt": "Login Time"
+  },
+  "common": {
+    "keyword": "Keyword"
+  },
+  "operation": {
+    "requestMethod": "Request Method",
+    "user": "User",
+    "module": "Module",
+    "action": "Action",
+    "method": "Method",
+    "path": "Request Path",
+    "statusCode": "Status Code",
+    "durationMs": "Duration (ms)",
+    "ip": "IP Address",
+    "createdAt": "Operation Time"
+  }
+}

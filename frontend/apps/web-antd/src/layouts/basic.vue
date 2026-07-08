@@ -1,7 +1,9 @@
 <script lang="ts" setup>
 import type { NotificationItem } from '@vben/layouts';
 
-import { computed, ref, watch } from 'vue';
+import type { UserMessageRecord } from '#/api';
+
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { AuthenticationLoginExpiredModal } from '@vben/common-ui';
@@ -16,69 +18,57 @@ import {
 } from '@vben/layouts';
 import { preferences, usePreferences } from '@vben/preferences';
 import { useAccessStore, useUserStore } from '@vben/stores';
-import { openWindow } from '@vben/utils';
+import { formatDateTime, openWindow } from '@vben/utils';
 
+import { listMyMessagesApi, markMessageReadApi } from '#/api';
 import { $t } from '#/locales';
 import { useAuthStore } from '#/store';
 import LoginForm from '#/views/_core/authentication/login.vue';
 
-const notifications = ref<NotificationItem[]>([
-  {
-    id: 1,
-    avatar: 'https://avatar.vercel.sh/vercel.svg?text=VB',
-    date: '3小时前',
-    isRead: true,
-    message: '描述信息描述信息描述信息',
-    title: '收到了 14 份新周报',
-  },
-  {
-    id: 2,
-    avatar: 'https://avatar.vercel.sh/1',
-    date: '刚刚',
-    isRead: false,
-    message: '描述信息描述信息描述信息',
-    title: '朱偏右 回复了你',
-  },
-  {
-    id: 3,
-    avatar: 'https://avatar.vercel.sh/1',
-    date: '2024-01-01',
-    isRead: false,
-    message: '描述信息描述信息描述信息',
-    title: '曲丽丽 评论了你',
-  },
-  {
-    id: 4,
-    avatar: 'https://avatar.vercel.sh/satori',
-    date: '1天前',
-    isRead: false,
-    message: '描述信息描述信息描述信息',
-    title: '代办提醒',
-  },
-  {
-    id: 5,
-    avatar: 'https://avatar.vercel.sh/satori',
-    date: '1天前',
-    isRead: false,
-    message: '描述信息描述信息描述信息',
-    title: '跳转Workspace示例',
-    link: '/workspace',
-  },
-  {
-    id: 6,
-    avatar: 'https://avatar.vercel.sh/satori',
-    date: '1天前',
-    isRead: false,
-    message: '描述信息描述信息描述信息',
-    title: '跳转外部链接示例',
-    link: 'https://doc.vben.pro',
-  },
-]);
+const notifications = ref<NotificationItem[]>([]);
+
+function mapMessageToNotification(
+  message: UserMessageRecord,
+): NotificationItem {
+  return {
+    id: message.id,
+    avatar: preferences.app.defaultAvatar,
+    date: message.created_at ? formatDateTime(message.created_at) : '',
+    isRead: message.is_read ?? false,
+    message: message.content,
+    title: message.title,
+    link: '/messages',
+  };
+}
+
+async function fetchNotifications() {
+  try {
+    const result = await listMyMessagesApi({ page: 1, page_size: 10 });
+    notifications.value = result.items.map(mapMessageToNotification);
+  } catch {
+    notifications.value = [];
+  }
+}
+
+onMounted(() => {
+  void fetchNotifications();
+});
 
 const router = useRouter();
 const userStore = useUserStore();
 const authStore = useAuthStore();
 const accessStore = useAccessStore();
+
+watch(
+  () => accessStore.accessToken,
+  (token) => {
+    if (token) {
+      void fetchNotifications();
+    } else {
+      notifications.value = [];
+    }
+  },
+);
 const { destroyWatermark, updateWatermark } = useWatermark();
 const { isDark } = usePreferences();
 const showDot = computed(() =>
@@ -123,21 +113,35 @@ const menus = computed(() => [
 ]);
 
 const avatar = computed(() => {
-  return userStore.userInfo?.avatar ?? preferences.app.defaultAvatar;
+  return userStore.userInfo?.avatar || preferences.app.defaultAvatar;
 });
+
+const userDescription = computed(
+  () => userStore.userInfo?.username || userStore.userInfo?.realName || '',
+);
 
 async function handleLogout() {
   await authStore.logout(false);
 }
 
-function handleNoticeClear() {
+async function handleNoticeClear() {
+  const unreadItems = notifications.value.filter((item) => !item.isRead);
+  await Promise.all(
+    unreadItems.map((item) => markMessageReadApi(String(item.id))),
+  );
   notifications.value = [];
 }
 
-function markRead(id: number | string) {
+async function markRead(id: number | string) {
   const item = notifications.value.find((item) => item.id === id);
-  if (item) {
+  if (!item || item.isRead) {
+    return;
+  }
+  try {
+    await markMessageReadApi(String(id));
     item.isRead = true;
+  } catch {
+    // keep unread state on failure
   }
 }
 
@@ -145,18 +149,35 @@ function remove(id: number | string) {
   notifications.value = notifications.value.filter((item) => item.id !== id);
 }
 
-function handleMakeAll() {
-  notifications.value.forEach((item) => (item.isRead = true));
+async function handleMakeAll() {
+  const unreadItems = notifications.value.filter((item) => !item.isRead);
+  if (unreadItems.length === 0) {
+    return;
+  }
+  try {
+    await Promise.all(
+      unreadItems.map((item) => markMessageReadApi(String(item.id))),
+    );
+    notifications.value.forEach((item) => {
+      item.isRead = true;
+    });
+  } catch {
+    await fetchNotifications();
+  }
 }
 
-const viewAll = () => {};
+function viewAll() {
+  router.push({ name: 'Messages' });
+}
 
-const handleClick = (item: NotificationItem) => {
-  // 如果通知项有链接，点击时跳转
+async function handleClick(item: NotificationItem) {
+  if (item.id && !item.isRead) {
+    await markRead(item.id);
+  }
   if (item.link) {
     navigateTo(item.link, item.query, item.state);
   }
-};
+}
 
 function navigateTo(
   link: string,
@@ -223,8 +244,9 @@ watch(
         :avatar
         :menus
         :text="userStore.userInfo?.realName"
-        description="ann.vben@gmail.com"
+        :description="userDescription"
         tag-text="Pro"
+        trigger="both"
         @logout="handleLogout"
         @clear-preferences-and-logout="handleLogout"
       />

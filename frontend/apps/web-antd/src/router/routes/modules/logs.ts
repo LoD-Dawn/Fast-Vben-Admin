@@ -5,7 +5,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       icon: 'lucide:clipboard-list',
       order: 15,
-      title: '日志审计',
+      title: 'menu.logs',
     },
     name: 'Logs',
     path: '/logs',
@@ -15,7 +15,7 @@ const routes: RouteRecordRaw[] = [
         meta: {
           authority: ['system:login-log:list'],
           icon: 'lucide:log-in',
-          title: '登录日志',
+          title: 'menu.loginLogs',
         },
         name: 'LoginLogs',
         path: 'login',
@@ -25,7 +25,7 @@ const routes: RouteRecordRaw[] = [
         meta: {
           authority: ['system:operation-log:list'],
           icon: 'lucide:history',
-          title: '操作日志',
+          title: 'menu.operationLogs',
         },
         name: 'OperationLogs',
         path: 'operation',

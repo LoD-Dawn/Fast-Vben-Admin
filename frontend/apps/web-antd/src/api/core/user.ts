@@ -2,6 +2,8 @@ import type { UserInfo } from '@vben/types';
 
 import { getCurrentUserApi } from './auth';
 
+const DEFAULT_AVATAR = '/images/avatar-v1.webp';
+
 /**
  * 获取用户信息
  */
@@ -10,7 +12,7 @@ export async function getUserInfoApi() {
   const role = user.is_superuser ? 'super' : 'user';
 
   return {
-    avatar: '',
+    avatar: user.avatar_url || DEFAULT_AVATAR,
     desc: user.is_superuser ? 'Super administrator' : 'User',
     homePath: '/dashboard',
     realName: user.full_name || user.email,

@@ -87,6 +87,7 @@ class DepartmentBase(SQLModel):
     leader_user_id: uuid.UUID | None = Field(default=None, foreign_key="user.id")
     sort: int = 0
     is_active: bool = True
+    remark: str | None = Field(default=None, max_length=255)
 
 
 class DepartmentCreate(DepartmentBase):
@@ -100,6 +101,7 @@ class DepartmentUpdate(SQLModel):
     leader_user_id: uuid.UUID | None = None
     sort: int | None = None
     is_active: bool | None = None
+    remark: str | None = Field(default=None, max_length=255)
 
 
 class Department(DepartmentBase, table=True):
@@ -639,6 +641,47 @@ class ItemsPublic(SQLModel):
     total: int
     page: int
     page_size: int
+
+
+class DashboardOverview(SQLModel):
+    user_count: int
+    user_total: int
+    login_count: int
+    login_total: int
+    file_count: int
+    file_total: int
+    operation_count: int
+    operation_total: int
+
+
+class DashboardHourlyTrend(SQLModel):
+    hour: str
+    login_count: int
+    operation_count: int
+
+
+class DashboardMonthlyVisit(SQLModel):
+    month: str
+    count: int
+
+
+class DashboardNamedValue(SQLModel):
+    name: str
+    value: int
+
+
+class DashboardRadarSeries(SQLModel):
+    name: str
+    values: list[int]
+
+
+class DashboardAnalytics(SQLModel):
+    overview: DashboardOverview
+    hourly_trends: list[DashboardHourlyTrend]
+    monthly_visits: list[DashboardMonthlyVisit]
+    device_radar: list[DashboardRadarSeries]
+    login_sources: list[DashboardNamedValue]
+    module_distribution: list[DashboardNamedValue]
 
 
 # Generic message

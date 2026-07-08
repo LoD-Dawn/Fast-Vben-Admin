@@ -181,6 +181,24 @@ def ensure_menu(
         menu = session.exec(select(Menu).where(Menu.route_path == route_path)).first()
 
     if menu:
+        changed = False
+        for field, value in {
+            "title": title,
+            "type": type,
+            "parent_id": parent_id,
+            "route_path": route_path,
+            "route_name": route_name,
+            "component": component,
+            "icon": icon,
+            "sort": sort,
+            "is_visible": is_visible,
+        }.items():
+            if value is not None and getattr(menu, field) != value:
+                setattr(menu, field, value)
+                changed = True
+        if changed:
+            session.add(menu)
+            session.flush()
         return menu
 
     menu = Menu(
@@ -203,18 +221,18 @@ def ensure_menu(
 def seed_menus(*, session: Session) -> list[Menu]:
     dashboard = ensure_menu(
         session=session,
-        title="仪表盘",
+        title="menu.dashboard",
         type="menu",
         route_path="/dashboard",
         route_name="Dashboard",
-        component="#/views/dashboard/index.vue",
+        component="#/views/dashboard/analytics/index.vue",
         icon="lucide:layout-dashboard",
         permission_code="dashboard:view",
         sort=0,
     )
     system = ensure_menu(
         session=session,
-        title="系统管理",
+        title="menu.system",
         type="directory",
         route_path="/system",
         route_name="System",
@@ -223,7 +241,7 @@ def seed_menus(*, session: Session) -> list[Menu]:
     )
     users = ensure_menu(
         session=session,
-        title="用户管理",
+        title="menu.systemUsers",
         type="menu",
         parent_id=system.id,
         route_path="/system/users",
@@ -235,7 +253,7 @@ def seed_menus(*, session: Session) -> list[Menu]:
     )
     roles = ensure_menu(
         session=session,
-        title="角色管理",
+        title="menu.systemRoles",
         type="menu",
         parent_id=system.id,
         route_path="/system/roles",
@@ -247,7 +265,7 @@ def seed_menus(*, session: Session) -> list[Menu]:
     )
     menus = ensure_menu(
         session=session,
-        title="菜单管理",
+        title="menu.systemMenus",
         type="menu",
         parent_id=system.id,
         route_path="/system/menus",
@@ -259,7 +277,7 @@ def seed_menus(*, session: Session) -> list[Menu]:
     )
     departments = ensure_menu(
         session=session,
-        title="部门管理",
+        title="menu.systemDepartments",
         type="menu",
         parent_id=system.id,
         route_path="/system/departments",
@@ -271,7 +289,7 @@ def seed_menus(*, session: Session) -> list[Menu]:
     )
     dictionaries = ensure_menu(
         session=session,
-        title="字典管理",
+        title="menu.systemDictionaries",
         type="menu",
         parent_id=system.id,
         route_path="/system/dictionaries",
@@ -283,7 +301,7 @@ def seed_menus(*, session: Session) -> list[Menu]:
     )
     system_settings = ensure_menu(
         session=session,
-        title="参数配置",
+        title="menu.systemSettings",
         type="menu",
         parent_id=system.id,
         route_path="/system/settings",
@@ -295,7 +313,7 @@ def seed_menus(*, session: Session) -> list[Menu]:
     )
     logs = ensure_menu(
         session=session,
-        title="日志审计",
+        title="menu.logs",
         type="directory",
         route_path="/logs",
         route_name="Logs",
@@ -304,7 +322,7 @@ def seed_menus(*, session: Session) -> list[Menu]:
     )
     login_logs = ensure_menu(
         session=session,
-        title="登录日志",
+        title="menu.loginLogs",
         type="menu",
         parent_id=logs.id,
         route_path="/logs/login",
@@ -316,7 +334,7 @@ def seed_menus(*, session: Session) -> list[Menu]:
     )
     operation_logs = ensure_menu(
         session=session,
-        title="操作日志",
+        title="menu.operationLogs",
         type="menu",
         parent_id=logs.id,
         route_path="/logs/operation",
@@ -328,7 +346,7 @@ def seed_menus(*, session: Session) -> list[Menu]:
     )
     files = ensure_menu(
         session=session,
-        title="文件管理",
+        title="menu.files",
         type="menu",
         route_path="/files",
         route_name="Files",
@@ -339,7 +357,7 @@ def seed_menus(*, session: Session) -> list[Menu]:
     )
     notices = ensure_menu(
         session=session,
-        title="通知公告",
+        title="menu.notices",
         type="menu",
         route_path="/notices",
         route_name="Notices",
@@ -350,7 +368,7 @@ def seed_menus(*, session: Session) -> list[Menu]:
     )
     messages = ensure_menu(
         session=session,
-        title="我的消息",
+        title="menu.messages",
         type="menu",
         route_path="/messages",
         route_name="Messages",
@@ -361,7 +379,7 @@ def seed_menus(*, session: Session) -> list[Menu]:
     )
     items = ensure_menu(
         session=session,
-        title="业务示例",
+        title="menu.items",
         type="menu",
         route_path="/items",
         route_name="Items",

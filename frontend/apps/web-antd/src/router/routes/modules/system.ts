@@ -5,7 +5,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       icon: 'lucide:settings',
       order: 10,
-      title: '系统管理',
+      title: 'menu.system',
     },
     name: 'System',
     path: '/system',
@@ -15,7 +15,7 @@ const routes: RouteRecordRaw[] = [
         meta: {
           authority: ['system:user:list'],
           icon: 'lucide:users',
-          title: '用户管理',
+          title: 'menu.systemUsers',
         },
         name: 'SystemUsers',
         path: 'users',
@@ -25,7 +25,7 @@ const routes: RouteRecordRaw[] = [
         meta: {
           authority: ['system:role:list'],
           icon: 'lucide:shield-check',
-          title: '角色管理',
+          title: 'menu.systemRoles',
         },
         name: 'SystemRoles',
         path: 'roles',
@@ -35,7 +35,7 @@ const routes: RouteRecordRaw[] = [
         meta: {
           authority: ['system:menu:list'],
           icon: 'lucide:menu',
-          title: '菜单管理',
+          title: 'menu.systemMenus',
         },
         name: 'SystemMenus',
         path: 'menus',
@@ -45,7 +45,7 @@ const routes: RouteRecordRaw[] = [
         meta: {
           authority: ['system:department:list'],
           icon: 'lucide:building-2',
-          title: '部门管理',
+          title: 'menu.systemDepartments',
         },
         name: 'SystemDepartments',
         path: 'departments',
@@ -55,7 +55,7 @@ const routes: RouteRecordRaw[] = [
         meta: {
           authority: ['system:dict:list'],
           icon: 'lucide:book-open',
-          title: '字典管理',
+          title: 'menu.systemDictionaries',
         },
         name: 'SystemDictionaries',
         path: 'dictionaries',
@@ -65,7 +65,7 @@ const routes: RouteRecordRaw[] = [
         meta: {
           authority: ['system:setting:list'],
           icon: 'lucide:sliders-horizontal',
-          title: '参数配置',
+          title: 'menu.systemSettings',
         },
         name: 'SystemSettings',
         path: 'settings',

@@ -1,0 +1,25 @@
+{
+  "login": {
+    "user": "用户",
+    "ip": "IP 地址",
+    "status": "状态",
+    "failureReason": "失败原因",
+    "userAgent": "浏览器",
+    "createdAt": "登录时间"
+  },
+  "common": {
+    "keyword": "关键词"
+  },
+  "operation": {
+    "requestMethod": "请求方法",
+    "user": "用户",
+    "module": "模块",
+    "action": "操作",
+    "method": "方法",
+    "path": "请求路径",
+    "statusCode": "状态码",
+    "durationMs": "耗时(ms)",
+    "ip": "IP 地址",
+    "createdAt": "操作时间"
+  }
+}

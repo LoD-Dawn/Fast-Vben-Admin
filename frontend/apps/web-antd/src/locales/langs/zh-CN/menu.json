@@ -1,0 +1,17 @@
+{
+  "dashboard": "仪表盘",
+  "system": "系统管理",
+  "systemUsers": "用户管理",
+  "systemRoles": "角色管理",
+  "systemMenus": "菜单管理",
+  "systemDepartments": "部门管理",
+  "systemDictionaries": "字典管理",
+  "systemSettings": "参数配置",
+  "logs": "日志审计",
+  "loginLogs": "登录日志",
+  "operationLogs": "操作日志",
+  "files": "文件管理",
+  "notices": "通知公告",
+  "messages": "我的消息",
+  "items": "业务示例"
+}

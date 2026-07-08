@@ -35,6 +35,7 @@ def read_departments(
         filters.append(
             (col(Department.name).ilike(pattern))
             | (col(Department.code).ilike(pattern))
+            | (col(Department.remark).ilike(pattern))
         )
 
     count_statement = select(func.count()).select_from(Department)
