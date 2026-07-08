@@ -9,10 +9,10 @@ COPY --from=ghcr.io/astral-sh/uv:0.9.26 /uv /uvx /bin/
 
 WORKDIR /app/backend
 
-COPY ./backend/pyproject.toml ./backend/alembic.ini ./
+COPY ./backend/pyproject.toml ./backend/uv.lock ./backend/alembic.ini ./
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --no-dev
+    uv sync --frozen --no-dev --no-install-project
 
 COPY ./backend/scripts ./scripts
 COPY ./backend/app ./app
