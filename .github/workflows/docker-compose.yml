@@ -28,7 +28,7 @@ jobs:
         run: docker compose -f compose.yml up --no-build prestart
 
       - name: Start application
-        run: docker compose -f compose.yml up -d --no-build backend frontend
+        run: docker compose -f compose.yml up -d --no-build --no-deps backend frontend
 
       - name: Wait for backend health
         run: |
