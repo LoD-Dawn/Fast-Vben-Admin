@@ -7,10 +7,14 @@ import type { UserMessageRecord } from '#/api';
 
 import { Page, useVbenModal } from '@vben/common-ui';
 
-import { message } from 'ant-design-vue';
+import { Button, message } from 'ant-design-vue';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
-import { listMyMessagesApi, markMessageReadApi } from '#/api';
+import {
+  listMyMessagesApi,
+  markAllMessagesReadApi,
+  markMessageReadApi,
+} from '#/api';
 
 import { useColumns, useGridFormSchema } from './data';
 import Detail from './modules/detail.vue';
@@ -67,6 +71,24 @@ async function onMarkRead(row: UserMessageRecord) {
   }
 }
 
+async function onMarkAllRead() {
+  const hideLoading = message.loading({
+    content: '正在标记全部消息',
+    duration: 0,
+    key: 'message_read_all',
+  });
+  try {
+    await markAllMessagesReadApi();
+    message.success({
+      content: '全部消息已标记为已读',
+      key: 'message_read_all',
+    });
+    onRefresh();
+  } catch {
+    hideLoading();
+  }
+}
+
 const [Grid, gridApi] = useVbenVxeGrid({
   formOptions: {
     schema: useGridFormSchema(),
@@ -111,6 +133,10 @@ function onRefresh() {
 <template>
   <Page auto-content-height>
     <DetailModal />
-    <Grid table-title="消息列表" />
+    <Grid table-title="消息列表">
+      <template #toolbar-tools>
+        <Button @click="onMarkAllRead">全部已读</Button>
+      </template>
+    </Grid>
   </Page>
 </template>

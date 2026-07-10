@@ -4,8 +4,14 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlmodel import col, func, or_, select
 
-from app.api.deps import CurrentUser, SessionDep, require_permission
+from app.api.deps import (
+    CurrentUser,
+    SessionDep,
+    normalize_pagination,
+    require_permission,
+)
 from app.models import (
+    Message,
     Notice,
     NoticeCreate,
     NoticePublic,
@@ -33,6 +39,7 @@ def read_notices(
     keyword: str | None = None,
     status: str | None = None,
 ) -> Any:
+    page, page_size = normalize_pagination(page=page, page_size=page_size)
     filters = []
     if status:
         filters.append(Notice.status == status)
@@ -207,6 +214,7 @@ def read_my_messages(
     page_size: int = 20,
     is_read: bool | None = None,
 ) -> Any:
+    page, page_size = normalize_pagination(page=page, page_size=page_size)
     filters = [UserMessage.user_id == current_user.id]
     if is_read is not None:
         filters.append(UserMessage.is_read == is_read)
@@ -227,6 +235,39 @@ def read_my_messages(
         page=page,
         page_size=page_size,
     )
+
+
+@router.get("/messages/me/unread-count")
+def read_my_unread_message_count(
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> dict[str, int]:
+    count = session.exec(
+        select(func.count())
+        .select_from(UserMessage)
+        .where(UserMessage.user_id == current_user.id, UserMessage.is_read == False)  # noqa: E712
+    ).one()
+    return {"count": count}
+
+
+@router.post("/messages/me/read-all", response_model=Message)
+def mark_all_messages_read(
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> Message:
+    messages = session.exec(
+        select(UserMessage).where(
+            UserMessage.user_id == current_user.id,
+            UserMessage.is_read == False,  # noqa: E712
+        )
+    ).all()
+    now = get_datetime_utc()
+    for message in messages:
+        message.is_read = True
+        message.read_at = now
+        session.add(message)
+    session.commit()
+    return Message(message="Messages marked as read")
 
 
 @router.post("/messages/{message_id}/read", response_model=UserMessagePublic)

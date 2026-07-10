@@ -11,7 +11,16 @@ from sqlmodel import Session, select
 from app.core import security
 from app.core.config import settings
 from app.core.db import engine
-from app.models import Menu, RoleMenu, TokenPayload, User, UserRole
+from app.models import (
+    Menu,
+    Role,
+    RoleMenu,
+    TokenPayload,
+    User,
+    UserRole,
+    UserSession,
+    get_datetime_utc,
+)
 
 reusable_oauth2 = OAuth2PasswordBearer(
     tokenUrl=f"{settings.API_V1_STR}/login/access-token"
@@ -27,13 +36,26 @@ SessionDep = Annotated[Session, Depends(get_db)]
 TokenDep = Annotated[str, Depends(reusable_oauth2)]
 
 
-def get_current_user(session: SessionDep, token: TokenDep) -> User:
+def get_token_payload(token: TokenDep) -> TokenPayload:
     try:
         payload = jwt.decode(
             token, settings.SECRET_KEY, algorithms=[security.ALGORITHM]
         )
-        token_data = TokenPayload(**payload)
+        return TokenPayload(**payload)
     except (InvalidTokenError, ValidationError):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Could not validate credentials",
+        )
+
+
+CurrentTokenPayload = Annotated[TokenPayload, Depends(get_token_payload)]
+
+
+def get_current_user(
+    session: SessionDep, token_data: CurrentTokenPayload
+) -> User:
+    if not token_data.sub or not token_data.jti:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Could not validate credentials",
@@ -43,10 +65,39 @@ def get_current_user(session: SessionDep, token: TokenDep) -> User:
         raise HTTPException(status_code=404, detail="User not found")
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Inactive user")
+
+    now = get_datetime_utc()
+    user_session = session.exec(
+        select(UserSession).where(
+            UserSession.user_id == user.id,
+            UserSession.token_jti == token_data.jti,
+            UserSession.revoked_at.is_(None),
+            UserSession.expires_at > now,
+        )
+    ).first()
+    if not user_session:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Could not validate credentials",
+        )
+
+    user_session.last_active_at = now
+    session.add(user_session)
+    session.commit()
     return user
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+def normalize_pagination(
+    *, page: int, page_size: int, max_page_size: int = 100
+) -> tuple[int, int]:
+    if page < 1:
+        raise HTTPException(status_code=422, detail="page must be greater than 0")
+    if page_size < 1:
+        raise HTTPException(status_code=422, detail="page_size must be greater than 0")
+    return page, min(page_size, max_page_size)
 
 
 def get_current_active_superuser(current_user: CurrentUser) -> User:
@@ -57,22 +108,34 @@ def get_current_active_superuser(current_user: CurrentUser) -> User:
     return current_user
 
 
+def user_has_permission(
+    *, session: Session, current_user: User, permission_code: str
+) -> bool:
+    if current_user.is_superuser:
+        return True
+
+    statement = (
+        select(Menu)
+        .join(RoleMenu, RoleMenu.menu_id == Menu.id)
+        .join(Role, Role.id == RoleMenu.role_id)
+        .join(UserRole, UserRole.role_id == RoleMenu.role_id)
+        .where(
+            UserRole.user_id == current_user.id,
+            Menu.permission_code == permission_code,
+            Menu.is_active,
+            Role.is_active,
+        )
+    )
+    return session.exec(statement).first() is not None
+
+
 def require_permission(permission_code: str):
     def dependency(session: SessionDep, current_user: CurrentUser) -> User:
-        if current_user.is_superuser:
-            return current_user
-
-        statement = (
-            select(Menu)
-            .join(RoleMenu, RoleMenu.menu_id == Menu.id)
-            .join(UserRole, UserRole.role_id == RoleMenu.role_id)
-            .where(
-                UserRole.user_id == current_user.id,
-                Menu.permission_code == permission_code,
-                Menu.is_active,
-            )
-        )
-        if session.exec(statement).first():
+        if user_has_permission(
+            session=session,
+            current_user=current_user,
+            permission_code=permission_code,
+        ):
             return current_user
 
         raise HTTPException(

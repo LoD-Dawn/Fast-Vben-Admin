@@ -85,7 +85,13 @@ export function useColumns(
           onClick: onActionClick,
         },
         name: 'CellOperation',
-        options: [{ code: 'download', text: $t('files.download') }, 'delete'],
+        options: [
+          { code: 'download', text: $t('files.download') },
+          {
+            auth: 'system:file:delete',
+            code: 'delete',
+          },
+        ],
       },
       field: 'operation',
       fixed: 'right',

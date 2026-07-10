@@ -268,7 +268,12 @@ onMounted(loadTypes);
       <Card class="flex w-1/6 min-w-[260px] flex-col">
         <div class="mb-3 flex items-center justify-between">
           <span class="font-medium">字典类型</span>
-          <Button size="small" type="primary" @click="onCreateType">
+          <Button
+            v-access:code="'system:dict:create'"
+            size="small"
+            type="primary"
+            @click="onCreateType"
+          >
             <Plus class="size-4" />
           </Button>
         </div>
@@ -309,6 +314,7 @@ onMounted(loadTypes);
               </div>
               <Dropdown placement="bottomRight" :trigger="['click']">
                 <Button
+                  v-access:code="['system:dict:update', 'system:dict:delete']"
                   class="shrink-0"
                   :class="
                     selectedType?.id === type.id
@@ -325,8 +331,16 @@ onMounted(loadTypes);
                 </Button>
                 <template #overlay>
                   <Menu @click="(info) => onTypeMenuClick(type, info)">
-                    <Menu.Item key="edit">编辑</Menu.Item>
-                    <Menu.Item key="delete" danger>删除</Menu.Item>
+                    <Menu.Item v-access:code="'system:dict:update'" key="edit">
+                      编辑
+                    </Menu.Item>
+                    <Menu.Item
+                      v-access:code="'system:dict:delete'"
+                      key="delete"
+                      danger
+                    >
+                      删除
+                    </Menu.Item>
                   </Menu>
                 </template>
               </Dropdown>
@@ -339,6 +353,7 @@ onMounted(loadTypes);
         <ItemGrid :table-title="itemTableTitle">
           <template #toolbar-tools>
             <Button
+              v-access:code="'system:dict:create'"
               :disabled="!selectedType"
               type="primary"
               @click="onCreateItem"

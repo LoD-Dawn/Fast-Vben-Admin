@@ -63,8 +63,14 @@ services:
       - .env
     environment:
       POSTGRES_SERVER: db
+    volumes:
+      - app-uploads:/app/backend/uploads
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/utils/health-check"]
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/utils/health-check', timeout=5)\"",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -86,3 +92,4 @@ services:
 
 volumes:
   app-db-data:
+  app-uploads:

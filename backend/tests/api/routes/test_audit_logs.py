@@ -1,3 +1,5 @@
+from datetime import UTC, datetime, timedelta
+
 from fastapi.testclient import TestClient
 
 from app.core.config import settings
@@ -30,6 +32,22 @@ def test_login_success_and_failure_are_logged(
     assert logs_response.status_code == 200
     statuses = {log["status"] for log in logs_response.json()["items"]}
     assert {"fail", "success"}.issubset(statuses)
+
+    filtered_response = client.get(
+        f"{settings.API_V1_STR}/logs/login",
+        headers=superuser_token_headers,
+        params={
+            "created_from": (
+                datetime.now(UTC) - timedelta(minutes=5)
+            ).isoformat(),
+            "created_to": (
+                datetime.now(UTC) + timedelta(minutes=5)
+            ).isoformat(),
+            "keyword": settings.FIRST_SUPERUSER,
+        },
+    )
+    assert filtered_response.status_code == 200
+    assert filtered_response.json()["total"] >= 1
 
 
 def test_operation_log_is_written_for_mutating_request(
@@ -65,6 +83,22 @@ def test_operation_log_is_written_for_mutating_request(
             and log["status_code"] == 200
             for log in logs
         )
+
+        filtered_response = client.get(
+            f"{settings.API_V1_STR}/logs/operation",
+            headers=superuser_token_headers,
+            params={
+                "created_from": (
+                    datetime.now(UTC) - timedelta(minutes=5)
+                ).isoformat(),
+                "created_to": (
+                    datetime.now(UTC) + timedelta(minutes=5)
+                ).isoformat(),
+                "keyword": "/api/v1/roles",
+            },
+        )
+        assert filtered_response.status_code == 200
+        assert filtered_response.json()["total"] >= 1
     finally:
         delete_response = client.delete(
             f"{settings.API_V1_STR}/roles/{role['id']}",

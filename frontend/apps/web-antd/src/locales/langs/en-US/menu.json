@@ -5,6 +5,8 @@
   "systemRoles": "Roles",
   "systemMenus": "Menus",
   "systemDepartments": "Departments",
+  "systemPosts": "Posts",
+  "systemOnlineUsers": "Online Users",
   "systemDictionaries": "Dictionaries",
   "systemSettings": "Settings",
   "logs": "Audit Logs",

@@ -2,13 +2,13 @@ import uuid
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
-from sqlmodel import Session, select
+from sqlmodel import Session, delete, select
 
 from app import crud
 from app.core.config import settings
 from app.core.security import verify_password
-from app.models import User, UserCreate
-from tests.utils.user import create_random_user
+from app.models import Post, User, UserCreate, UserPost
+from tests.utils.user import create_random_user, user_authentication_headers
 from tests.utils.utils import random_email, random_lower_string
 
 
@@ -200,6 +200,42 @@ def test_retrieve_users(
         assert "email" in item
 
 
+def test_retrieve_users_filters_by_active_status(
+    client: TestClient, superuser_token_headers: dict[str, str], db: Session
+) -> None:
+    active_user = crud.create_user(
+        session=db,
+        user_create=UserCreate(email=random_email(), password=random_lower_string()),
+    )
+    inactive_user = crud.create_user(
+        session=db,
+        user_create=UserCreate(
+            email=random_email(),
+            is_active=False,
+            password=random_lower_string(),
+        ),
+    )
+
+    active_response = client.get(
+        f"{settings.API_V1_STR}/users",
+        headers=superuser_token_headers,
+        params={"is_active": True, "page_size": 100},
+    )
+    inactive_response = client.get(
+        f"{settings.API_V1_STR}/users",
+        headers=superuser_token_headers,
+        params={"is_active": False, "page_size": 100},
+    )
+
+    assert active_response.status_code == 200
+    assert inactive_response.status_code == 200
+    active_ids = {item["id"] for item in active_response.json()["items"]}
+    inactive_ids = {item["id"] for item in inactive_response.json()["items"]}
+    assert str(active_user.id) in active_ids
+    assert str(inactive_user.id) not in active_ids
+    assert str(inactive_user.id) in inactive_ids
+
+
 def test_export_users(
     client: TestClient, superuser_token_headers: dict[str, str]
 ) -> None:
@@ -210,6 +246,103 @@ def test_export_users(
     assert response.status_code == 200
     assert "text/csv" in response.headers["content-type"]
     assert "email" in response.text
+
+
+def test_download_user_import_template(
+    client: TestClient, superuser_token_headers: dict[str, str]
+) -> None:
+    response = client.get(
+        f"{settings.API_V1_STR}/users/import-template",
+        headers=superuser_token_headers,
+    )
+
+    assert response.status_code == 200
+    assert "text/csv" in response.headers["content-type"]
+    assert "department_code" in response.text
+    assert "role_codes" in response.text
+    assert "post_codes" in response.text
+
+
+def test_superuser_can_import_users_with_roles_and_posts(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    email = random_email()
+    csv_content = (
+        "email,password,full_name,department_code,role_codes,post_codes,"
+        "is_active,is_superuser\n"
+        f"{email},changethis,Imported User,headquarters,user,developer,true,false\n"
+    )
+    response = client.post(
+        f"{settings.API_V1_STR}/users/import",
+        headers=superuser_token_headers,
+        files={"file": ("users.csv", csv_content, "text/csv")},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["success"] == 1
+    assert response.json()["failed"] == 0
+
+    user = crud.get_user_by_email(session=db, email=email)
+    assert user
+    role_response = client.get(
+        f"{settings.API_V1_STR}/users/{user.id}/roles",
+        headers=superuser_token_headers,
+    )
+    post_response = client.get(
+        f"{settings.API_V1_STR}/users/{user.id}/posts",
+        headers=superuser_token_headers,
+    )
+    assert role_response.status_code == 200
+    assert post_response.status_code == 200
+    assert [role["code"] for role in role_response.json()] == ["user"]
+    assert [post["code"] for post in post_response.json()] == ["developer"]
+
+    db.delete(user)
+    db.commit()
+
+
+def test_user_import_returns_row_errors_without_blocking_valid_rows(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    email = random_email()
+    csv_content = (
+        "email,password,department_code,role_codes,post_codes\n"
+        f"{email},changethis,headquarters,user,developer\n"
+        f"{settings.FIRST_SUPERUSER},changethis,headquarters,user,developer\n"
+    )
+    response = client.post(
+        f"{settings.API_V1_STR}/users/import",
+        headers=superuser_token_headers,
+        files={"file": ("users.csv", csv_content, "text/csv")},
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["success"] == 1
+    assert result["failed"] == 1
+    assert result["errors"][0]["row"] == 3
+    assert "email already exists" in result["errors"][0]["error"]
+
+    user = crud.get_user_by_email(session=db, email=email)
+    assert user
+    db.delete(user)
+    db.commit()
+
+
+def test_normal_user_cannot_import_users(
+    client: TestClient, normal_user_token_headers: dict[str, str]
+) -> None:
+    response = client.post(
+        f"{settings.API_V1_STR}/users/import",
+        headers=normal_user_token_headers,
+        files={"file": ("users.csv", "email,password\nuser@example.com,changethis\n")},
+    )
+
+    assert response.status_code == 403
 
 
 def test_update_user_me(
@@ -235,47 +368,42 @@ def test_update_user_me(
     assert user_db.full_name == full_name
 
 
-def test_update_password_me(
-    client: TestClient, superuser_token_headers: dict[str, str], db: Session
+def test_update_password_me_revokes_existing_session(
+    client: TestClient, db: Session
 ) -> None:
+    password = random_lower_string()
     new_password = random_lower_string()
+    user = crud.create_user(
+        session=db,
+        user_create=UserCreate(email=random_email(), password=password),
+    )
+    headers = user_authentication_headers(
+        client=client,
+        email=user.email,
+        password=password,
+    )
     data = {
-        "current_password": settings.FIRST_SUPERUSER_PASSWORD,
+        "current_password": password,
         "new_password": new_password,
     }
     r = client.patch(
         f"{settings.API_V1_STR}/users/me/password",
-        headers=superuser_token_headers,
+        headers=headers,
         json=data,
     )
     assert r.status_code == 200
     updated_user = r.json()
     assert updated_user["message"] == "Password updated successfully"
 
-    user_query = select(User).where(User.email == settings.FIRST_SUPERUSER)
-    user_db = db.exec(user_query).first()
-    assert user_db
-    assert user_db.email == settings.FIRST_SUPERUSER
-    verified, _ = verify_password(new_password, user_db.hashed_password)
+    db.refresh(user)
+    verified, _ = verify_password(new_password, user.hashed_password)
     assert verified
 
-    # Revert to the old password to keep consistency in test
-    old_data = {
-        "current_password": new_password,
-        "new_password": settings.FIRST_SUPERUSER_PASSWORD,
-    }
-    r = client.patch(
-        f"{settings.API_V1_STR}/users/me/password",
-        headers=superuser_token_headers,
-        json=old_data,
+    rejected_response = client.get(
+        f"{settings.API_V1_STR}/users/me",
+        headers=headers,
     )
-    db.refresh(user_db)
-
-    assert r.status_code == 200
-    verified, _ = verify_password(
-        settings.FIRST_SUPERUSER_PASSWORD, user_db.hashed_password
-    )
-    assert verified
+    assert rejected_response.status_code == 403
 
 
 def test_update_password_me_incorrect_password(
@@ -516,3 +644,64 @@ def test_delete_user_without_privileges(
     )
     assert r.status_code == 403
     assert r.json()["message"] == "The user doesn't have enough privileges"
+
+
+def test_superuser_can_update_and_read_user_posts(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    user = crud.create_user(
+        session=db,
+        user_create=UserCreate(email=random_email(), password=random_lower_string()),
+    )
+    post = Post(code=f"post_{random_lower_string()}", name="User post")
+    db.add(post)
+    db.commit()
+    db.refresh(post)
+
+    try:
+        update_response = client.put(
+            f"{settings.API_V1_STR}/users/{user.id}/posts",
+            headers=superuser_token_headers,
+            json={"post_ids": [str(post.id)]},
+        )
+        assert update_response.status_code == 200
+        assert update_response.json() == [str(post.id)]
+
+        read_response = client.get(
+            f"{settings.API_V1_STR}/users/{user.id}/posts",
+            headers=superuser_token_headers,
+        )
+        assert read_response.status_code == 200
+        posts = read_response.json()
+        assert len(posts) == 1
+        assert posts[0]["id"] == str(post.id)
+    finally:
+        db.exec(delete(UserPost).where(UserPost.user_id == user.id))
+        db.delete(user)
+        db.delete(post)
+        db.commit()
+
+
+def test_update_user_posts_rejects_unknown_post(
+    client: TestClient,
+    db: Session,
+    superuser_token_headers: dict[str, str],
+) -> None:
+    user = crud.create_user(
+        session=db,
+        user_create=UserCreate(email=random_email(), password=random_lower_string()),
+    )
+
+    try:
+        response = client.put(
+            f"{settings.API_V1_STR}/users/{user.id}/posts",
+            headers=superuser_token_headers,
+            json={"post_ids": [str(uuid.uuid4())]},
+        )
+        assert response.status_code == 400
+        assert response.json()["message"] == "Some posts do not exist"
+    finally:
+        db.delete(user)
+        db.commit()

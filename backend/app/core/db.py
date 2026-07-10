@@ -7,6 +7,7 @@ from app.models import (
     DictionaryItem,
     DictionaryType,
     Menu,
+    Post,
     Role,
     RoleMenu,
     SystemSetting,
@@ -83,6 +84,7 @@ def seed_system_data(*, session: Session, superuser: User) -> None:
     )
 
     seed_dictionaries(session=session)
+    seed_posts(session=session)
     seed_settings(session=session)
     menus = seed_menus(session=session)
     bind_role_menus(session=session, role=super_admin, menus=menus)
@@ -156,6 +158,17 @@ def ensure_role(
     session.add(role)
     session.flush()
     return role
+
+
+def ensure_post(*, session: Session, code: str, name: str, sort: int) -> Post:
+    post = session.exec(select(Post).where(Post.code == code)).first()
+    if post:
+        return post
+
+    post = Post(code=code, name=name, sort=sort)
+    session.add(post)
+    session.flush()
+    return post
 
 
 def ensure_menu(
@@ -287,6 +300,18 @@ def seed_menus(*, session: Session) -> list[Menu]:
         permission_code="system:department:list",
         sort=40,
     )
+    posts = ensure_menu(
+        session=session,
+        title="menu.systemPosts",
+        type="menu",
+        parent_id=system.id,
+        route_path="/system/posts",
+        route_name="SystemPosts",
+        component="#/views/system/posts/index.vue",
+        icon="lucide:briefcase-business",
+        permission_code="system:post:list",
+        sort=50,
+    )
     dictionaries = ensure_menu(
         session=session,
         title="menu.systemDictionaries",
@@ -297,7 +322,7 @@ def seed_menus(*, session: Session) -> list[Menu]:
         component="#/views/system/dictionaries/index.vue",
         icon="lucide:book-open",
         permission_code="system:dict:list",
-        sort=50,
+        sort=60,
     )
     system_settings = ensure_menu(
         session=session,
@@ -309,7 +334,19 @@ def seed_menus(*, session: Session) -> list[Menu]:
         component="#/views/system/settings/index.vue",
         icon="lucide:sliders-horizontal",
         permission_code="system:setting:list",
-        sort=60,
+        sort=70,
+    )
+    online_users = ensure_menu(
+        session=session,
+        title="menu.systemOnlineUsers",
+        type="menu",
+        parent_id=system.id,
+        route_path="/system/online-users",
+        route_name="SystemOnlineUsers",
+        component="#/views/system/online-users/index.vue",
+        icon="lucide:monitor-smartphone",
+        permission_code="system:session:list",
+        sort=80,
     )
     logs = ensure_menu(
         session=session,
@@ -402,10 +439,14 @@ def seed_menus(*, session: Session) -> list[Menu]:
         (departments.id, "新增部门", "system:department:create", 41),
         (departments.id, "编辑部门", "system:department:update", 42),
         (departments.id, "删除部门", "system:department:delete", 43),
-        (dictionaries.id, "新增字典", "system:dict:create", 51),
-        (dictionaries.id, "编辑字典", "system:dict:update", 52),
-        (dictionaries.id, "删除字典", "system:dict:delete", 53),
-        (system_settings.id, "编辑参数", "system:setting:update", 61),
+        (posts.id, "新增岗位", "system:post:create", 51),
+        (posts.id, "编辑岗位", "system:post:update", 52),
+        (posts.id, "删除岗位", "system:post:delete", 53),
+        (dictionaries.id, "新增字典", "system:dict:create", 61),
+        (dictionaries.id, "编辑字典", "system:dict:update", 62),
+        (dictionaries.id, "删除字典", "system:dict:delete", 63),
+        (system_settings.id, "编辑参数", "system:setting:update", 71),
+        (online_users.id, "强制下线", "system:session:revoke", 81),
         (files.id, "上传文件", "system:file:upload", 71),
         (files.id, "删除文件", "system:file:delete", 72),
         (notices.id, "新增公告", "system:notice:create", 81),
@@ -434,8 +475,10 @@ def seed_menus(*, session: Session) -> list[Menu]:
         roles,
         menus,
         departments,
+        posts,
         dictionaries,
         system_settings,
+        online_users,
         logs,
         login_logs,
         operation_logs,
@@ -445,6 +488,12 @@ def seed_menus(*, session: Session) -> list[Menu]:
         items,
         *buttons,
     ]
+
+
+def seed_posts(*, session: Session) -> None:
+    ensure_post(session=session, code="manager", name="经理", sort=10)
+    ensure_post(session=session, code="developer", name="开发工程师", sort=20)
+    ensure_post(session=session, code="operator", name="运营专员", sort=30)
 
 
 def ensure_dictionary_type(

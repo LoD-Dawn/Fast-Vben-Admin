@@ -16,6 +16,7 @@
     "emailInvalid": "Please enter a valid email",
     "fullName": "Full Name",
     "roles": "Roles",
+    "posts": "Posts",
     "password": "Initial Password",
     "newPassword": "New Password",
     "superuser": "Superuser",
@@ -25,7 +26,14 @@
     "deleteSuccess": "User deleted",
     "deleteFailed": "Delete failed",
     "createUser": "Add User",
-    "export": "Export"
+    "export": "Export",
+    "template": "Template",
+    "import": "Import",
+    "importTitle": "Import Users",
+    "importHint": "Click or drag a CSV file here to upload",
+    "importFileType": "CSV files only",
+    "importResult": "Import completed: {0} succeeded, {1} failed",
+    "importSuccess": "Imported {0} users successfully"
   },
   "dept": {
     "name": "Department",
@@ -38,6 +46,34 @@
     "operation": "Actions",
     "parentDept": "Parent Department",
     "appendChild": "Add Child"
+  },
+  "post": {
+    "title": "Post Management",
+    "list": "Post List",
+    "name": "Post",
+    "postName": "Post Name",
+    "postCode": "Post Code",
+    "status": "Status",
+    "remark": "Remark",
+    "createTime": "Created At",
+    "operation": "Actions"
+  },
+  "onlineUser": {
+    "title": "Online Users",
+    "list": "Online User List",
+    "name": "User",
+    "email": "Email",
+    "fullName": "Full Name",
+    "ip": "Login IP",
+    "userAgent": "User Agent",
+    "loginTime": "Login Time",
+    "lastActiveTime": "Last Active At",
+    "expiresAt": "Expires At",
+    "operation": "Actions",
+    "revoke": "Force Logout",
+    "revokeTitle": "Force Logout",
+    "revokeContent": "Force {0} to log out?",
+    "revokeSuccess": "User has been logged out"
   },
   "menu": {
     "title": "Menu Management",

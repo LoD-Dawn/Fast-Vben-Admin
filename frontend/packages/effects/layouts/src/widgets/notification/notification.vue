@@ -17,12 +17,15 @@ defineOptions({ name: 'NotificationPopup' });
 
 withDefaults(
   defineProps<{
+    /** 未读数量 */
+    count?: number;
     /** 显示圆点 */
     dot?: boolean;
     /** 消息列表 */
     notifications?: NotificationItem[];
   }>(),
   {
+    count: 0,
     dot: false,
     notifications: () => [],
   },
@@ -62,7 +65,13 @@ const handleClear = () => {
       <div class="mr-2 flex-center h-full" @click.stop="toggle()">
         <VbenIconButton class="bell-button relative text-foreground">
           <span
-            v-if="dot"
+            v-if="dot && count > 0"
+            class="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] leading-none text-primary-foreground"
+          >
+            {{ count > 99 ? '99+' : count }}
+          </span>
+          <span
+            v-else-if="dot"
             class="absolute top-0.5 right-0.5 size-2 rounded-sm bg-primary"
           ></span>
           <Bell class="size-4" />

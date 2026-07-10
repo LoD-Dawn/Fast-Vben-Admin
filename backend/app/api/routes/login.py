@@ -1,3 +1,4 @@
+import uuid
 from datetime import timedelta
 from typing import Annotated, Any
 
@@ -7,10 +8,18 @@ from fastapi.security import OAuth2PasswordRequestForm
 
 from app import crud
 from app.api.deps import CurrentUser, SessionDep, get_current_active_superuser
-from app.audit import create_login_log
+from app.audit import create_login_log, get_client_ip, get_user_agent
 from app.core import security
 from app.core.config import settings
-from app.models import Message, NewPassword, Token, UserPublic, UserUpdate
+from app.models import (
+    Message,
+    NewPassword,
+    Token,
+    UserPublic,
+    UserSession,
+    UserUpdate,
+    get_datetime_utc,
+)
 from app.utils import (
     generate_password_reset_token,
     generate_reset_password_email,
@@ -60,9 +69,22 @@ def login_access_token(
         user=user,
     )
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    token_id = str(uuid.uuid4())
+    session.add(
+        UserSession(
+            user_id=user.id,
+            token_jti=token_id,
+            ip=get_client_ip(request),
+            user_agent=get_user_agent(request),
+            expires_at=get_datetime_utc() + access_token_expires,
+        )
+    )
+    session.commit()
     return Token(
         access_token=security.create_access_token(
-            user.id, expires_delta=access_token_expires
+            user.id,
+            expires_delta=access_token_expires,
+            token_id=token_id,
         )
     )
 

@@ -126,17 +126,21 @@ function openImport() {
     <ImportModal @success="onRefresh" />
     <Grid :table-title="$t('business.list')">
       <template #toolbar-tools>
-        <Button type="primary" @click="onCreate">
+        <Button v-access:code="'business:item:create'" type="primary" @click="onCreate">
           <Plus class="size-5" />
           {{ $t('business.create') }}
         </Button>
-        <Button class="ml-2" @click="exportItems">
+        <Button v-access:code="'business:item:list'" class="ml-2" @click="exportItems">
           {{ $t('business.export') }}
         </Button>
-        <Button class="ml-2" @click="downloadTemplate">
+        <Button
+          v-access:code="'business:item:create'"
+          class="ml-2"
+          @click="downloadTemplate"
+        >
           {{ $t('business.template') }}
         </Button>
-        <Button class="ml-2" @click="openImport">
+        <Button v-access:code="'business:item:create'" class="ml-2" @click="openImport">
           {{ $t('business.import') }}
         </Button>
       </template>

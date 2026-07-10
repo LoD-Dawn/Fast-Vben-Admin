@@ -7,6 +7,7 @@ export * from './logs';
 export * from './menu';
 export * from './notices';
 export * from './rbac';
+export * from './sessions';
 export * from './system-config';
 export * from './user';
 export * from './users';

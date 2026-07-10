@@ -65,6 +65,141 @@ export type BodyLoginLoginAccessToken = {
 };
 
 /**
+ * Body_users-import_users
+ */
+export type BodyUsersImportUsers = {
+    /**
+     * File
+     */
+    file: Blob | File;
+};
+
+/**
+ * DashboardAnalytics
+ */
+export type DashboardAnalytics = {
+    overview: DashboardOverview;
+    /**
+     * Hourly Trends
+     */
+    hourly_trends: Array<DashboardHourlyTrend>;
+    /**
+     * Monthly Visits
+     */
+    monthly_visits: Array<DashboardMonthlyVisit>;
+    /**
+     * Device Radar
+     */
+    device_radar: Array<DashboardRadarSeries>;
+    /**
+     * Login Sources
+     */
+    login_sources: Array<DashboardNamedValue>;
+    /**
+     * Module Distribution
+     */
+    module_distribution: Array<DashboardNamedValue>;
+};
+
+/**
+ * DashboardHourlyTrend
+ */
+export type DashboardHourlyTrend = {
+    /**
+     * Hour
+     */
+    hour: string;
+    /**
+     * Login Count
+     */
+    login_count: number;
+    /**
+     * Operation Count
+     */
+    operation_count: number;
+};
+
+/**
+ * DashboardMonthlyVisit
+ */
+export type DashboardMonthlyVisit = {
+    /**
+     * Month
+     */
+    month: string;
+    /**
+     * Count
+     */
+    count: number;
+};
+
+/**
+ * DashboardNamedValue
+ */
+export type DashboardNamedValue = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Value
+     */
+    value: number;
+};
+
+/**
+ * DashboardOverview
+ */
+export type DashboardOverview = {
+    /**
+     * User Count
+     */
+    user_count: number;
+    /**
+     * User Total
+     */
+    user_total: number;
+    /**
+     * Login Count
+     */
+    login_count: number;
+    /**
+     * Login Total
+     */
+    login_total: number;
+    /**
+     * File Count
+     */
+    file_count: number;
+    /**
+     * File Total
+     */
+    file_total: number;
+    /**
+     * Operation Count
+     */
+    operation_count: number;
+    /**
+     * Operation Total
+     */
+    operation_total: number;
+};
+
+/**
+ * DashboardRadarSeries
+ */
+export type DashboardRadarSeries = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Values
+     */
+    values: Array<number>;
+};
+
+/**
  * DepartmentCreate
  */
 export type DepartmentCreate = {
@@ -1087,6 +1222,118 @@ export type OperationLogsPublic = {
 };
 
 /**
+ * PostCreate
+ */
+export type PostCreate = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Code
+     */
+    code: string;
+    /**
+     * Sort
+     */
+    sort?: number;
+    /**
+     * Is Active
+     */
+    is_active?: boolean;
+    /**
+     * Remark
+     */
+    remark?: string | null;
+};
+
+/**
+ * PostPublic
+ */
+export type PostPublic = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Code
+     */
+    code: string;
+    /**
+     * Sort
+     */
+    sort?: number;
+    /**
+     * Is Active
+     */
+    is_active?: boolean;
+    /**
+     * Remark
+     */
+    remark?: string | null;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Created At
+     */
+    created_at?: string | null;
+    /**
+     * Updated At
+     */
+    updated_at?: string | null;
+};
+
+/**
+ * PostUpdate
+ */
+export type PostUpdate = {
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Code
+     */
+    code?: string | null;
+    /**
+     * Sort
+     */
+    sort?: number | null;
+    /**
+     * Is Active
+     */
+    is_active?: boolean | null;
+    /**
+     * Remark
+     */
+    remark?: string | null;
+};
+
+/**
+ * PostsPublic
+ */
+export type PostsPublic = {
+    /**
+     * Items
+     */
+    items: Array<PostPublic>;
+    /**
+     * Total
+     */
+    total: number;
+    /**
+     * Page
+     */
+    page: number;
+    /**
+     * Page Size
+     */
+    page_size: number;
+};
+
+/**
  * PrivateUserCreate
  */
 export type PrivateUserCreate = {
@@ -1475,6 +1722,16 @@ export type UserMessagesPublic = {
 };
 
 /**
+ * UserPostUpdate
+ */
+export type UserPostUpdate = {
+    /**
+     * Post Ids
+     */
+    post_ids: Array<string>;
+};
+
+/**
  * UserPublic
  */
 export type UserPublic = {
@@ -1524,6 +1781,70 @@ export type UserRoleUpdate = {
      * Role Ids
      */
     role_ids: Array<string>;
+};
+
+/**
+ * UserSessionPublic
+ */
+export type UserSessionPublic = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * User Id
+     */
+    user_id: string;
+    /**
+     * Email
+     */
+    email: string;
+    /**
+     * Full Name
+     */
+    full_name?: string | null;
+    /**
+     * Ip
+     */
+    ip?: string | null;
+    /**
+     * User Agent
+     */
+    user_agent?: string | null;
+    /**
+     * Created At
+     */
+    created_at?: string | null;
+    /**
+     * Last Active At
+     */
+    last_active_at?: string | null;
+    /**
+     * Expires At
+     */
+    expires_at: string;
+};
+
+/**
+ * UserSessionsPublic
+ */
+export type UserSessionsPublic = {
+    /**
+     * Items
+     */
+    items: Array<UserSessionPublic>;
+    /**
+     * Total
+     */
+    total: number;
+    /**
+     * Page
+     */
+    page: number;
+    /**
+     * Page Size
+     */
+    page_size: number;
 };
 
 /**
@@ -1746,6 +2067,22 @@ export type LoginRecoverPasswordHtmlContentResponses = {
 
 export type LoginRecoverPasswordHtmlContentResponse = LoginRecoverPasswordHtmlContentResponses[keyof LoginRecoverPasswordHtmlContentResponses];
 
+export type DashboardReadDashboardAnalyticsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/dashboard/analytics';
+};
+
+export type DashboardReadDashboardAnalyticsResponses = {
+    /**
+     * Successful Response
+     */
+    200: DashboardAnalytics;
+};
+
+export type DashboardReadDashboardAnalyticsResponse = DashboardReadDashboardAnalyticsResponses[keyof DashboardReadDashboardAnalyticsResponses];
+
 export type UsersReadUsersData = {
     body?: never;
     path?: never;
@@ -1762,6 +2099,14 @@ export type UsersReadUsersData = {
          * Keyword
          */
         keyword?: string | null;
+        /**
+         * Department Id
+         */
+        department_id?: string | null;
+        /**
+         * Is Active
+         */
+        is_active?: boolean | null;
     };
     url: '/api/v1/users';
 };
@@ -1888,6 +2233,49 @@ export type UsersExportUsersResponses = {
      */
     200: unknown;
 };
+
+export type UsersDownloadUserImportTemplateData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/users/import-template';
+};
+
+export type UsersDownloadUserImportTemplateResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type UsersImportUsersData = {
+    body: BodyUsersImportUsers;
+    path?: never;
+    query?: never;
+    url: '/api/v1/users/import';
+};
+
+export type UsersImportUsersErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UsersImportUsersError = UsersImportUsersErrors[keyof UsersImportUsersErrors];
+
+export type UsersImportUsersResponses = {
+    /**
+     * Response Users-Import Users
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type UsersImportUsersResponse = UsersImportUsersResponses[keyof UsersImportUsersResponses];
 
 export type UsersDeleteUserData = {
     body?: never;
@@ -2042,6 +2430,70 @@ export type UsersUpdateUserRolesResponses = {
 };
 
 export type UsersUpdateUserRolesResponse = UsersUpdateUserRolesResponses[keyof UsersUpdateUserRolesResponses];
+
+export type UsersReadUserPostsData = {
+    body?: never;
+    path: {
+        /**
+         * User Id
+         */
+        user_id: string;
+    };
+    query?: never;
+    url: '/api/v1/users/{user_id}/posts';
+};
+
+export type UsersReadUserPostsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UsersReadUserPostsError = UsersReadUserPostsErrors[keyof UsersReadUserPostsErrors];
+
+export type UsersReadUserPostsResponses = {
+    /**
+     * Response Users-Read User Posts
+     *
+     * Successful Response
+     */
+    200: Array<PostPublic>;
+};
+
+export type UsersReadUserPostsResponse = UsersReadUserPostsResponses[keyof UsersReadUserPostsResponses];
+
+export type UsersUpdateUserPostsData = {
+    body: UserPostUpdate;
+    path: {
+        /**
+         * User Id
+         */
+        user_id: string;
+    };
+    query?: never;
+    url: '/api/v1/users/{user_id}/posts';
+};
+
+export type UsersUpdateUserPostsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UsersUpdateUserPostsError = UsersUpdateUserPostsErrors[keyof UsersUpdateUserPostsErrors];
+
+export type UsersUpdateUserPostsResponses = {
+    /**
+     * Response Users-Update User Posts
+     *
+     * Successful Response
+     */
+    200: Array<string>;
+};
+
+export type UsersUpdateUserPostsResponse = UsersUpdateUserPostsResponses[keyof UsersUpdateUserPostsResponses];
 
 export type UtilsTestEmailData = {
     body?: never;
@@ -2321,6 +2773,14 @@ export type LogsReadLoginLogsData = {
          * Status
          */
         status?: string | null;
+        /**
+         * Created From
+         */
+        created_from?: string | null;
+        /**
+         * Created To
+         */
+        created_to?: string | null;
     };
     url: '/api/v1/logs/login';
 };
@@ -2367,6 +2827,14 @@ export type LogsReadOperationLogsData = {
          * Status Code
          */
         status_code?: number | null;
+        /**
+         * Created From
+         */
+        created_from?: string | null;
+        /**
+         * Created To
+         */
+        created_to?: string | null;
     };
     url: '/api/v1/logs/operation';
 };
@@ -3008,6 +3476,42 @@ export type NoticesReadMyMessagesResponses = {
 
 export type NoticesReadMyMessagesResponse = NoticesReadMyMessagesResponses[keyof NoticesReadMyMessagesResponses];
 
+export type NoticesReadMyUnreadMessageCountData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/messages/me/unread-count';
+};
+
+export type NoticesReadMyUnreadMessageCountResponses = {
+    /**
+     * Response Notices-Read My Unread Message Count
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: number;
+    };
+};
+
+export type NoticesReadMyUnreadMessageCountResponse = NoticesReadMyUnreadMessageCountResponses[keyof NoticesReadMyUnreadMessageCountResponses];
+
+export type NoticesMarkAllMessagesReadData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/messages/me/read-all';
+};
+
+export type NoticesMarkAllMessagesReadResponses = {
+    /**
+     * Successful Response
+     */
+    200: Message;
+};
+
+export type NoticesMarkAllMessagesReadResponse = NoticesMarkAllMessagesReadResponses[keyof NoticesMarkAllMessagesReadResponses];
+
 export type NoticesMarkMessageReadData = {
     body?: never;
     path: {
@@ -3055,6 +3559,201 @@ export type PermissionsReadMyPermissionsResponses = {
 };
 
 export type PermissionsReadMyPermissionsResponse = PermissionsReadMyPermissionsResponses[keyof PermissionsReadMyPermissionsResponses];
+
+export type PostsReadPostsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Page
+         */
+        page?: number;
+        /**
+         * Page Size
+         */
+        page_size?: number;
+        /**
+         * Keyword
+         */
+        keyword?: string | null;
+        /**
+         * Is Active
+         */
+        is_active?: boolean | null;
+    };
+    url: '/api/v1/posts';
+};
+
+export type PostsReadPostsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PostsReadPostsError = PostsReadPostsErrors[keyof PostsReadPostsErrors];
+
+export type PostsReadPostsResponses = {
+    /**
+     * Successful Response
+     */
+    200: PostsPublic;
+};
+
+export type PostsReadPostsResponse = PostsReadPostsResponses[keyof PostsReadPostsResponses];
+
+export type PostsCreatePostData = {
+    body: PostCreate;
+    path?: never;
+    query?: never;
+    url: '/api/v1/posts';
+};
+
+export type PostsCreatePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PostsCreatePostError = PostsCreatePostErrors[keyof PostsCreatePostErrors];
+
+export type PostsCreatePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: PostPublic;
+};
+
+export type PostsCreatePostResponse = PostsCreatePostResponses[keyof PostsCreatePostResponses];
+
+export type PostsDeletePostData = {
+    body?: never;
+    path: {
+        /**
+         * Post Id
+         */
+        post_id: string;
+    };
+    query?: never;
+    url: '/api/v1/posts/{post_id}';
+};
+
+export type PostsDeletePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PostsDeletePostError = PostsDeletePostErrors[keyof PostsDeletePostErrors];
+
+export type PostsDeletePostResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type PostsDeletePostResponse = PostsDeletePostResponses[keyof PostsDeletePostResponses];
+
+export type PostsUpdatePostData = {
+    body: PostUpdate;
+    path: {
+        /**
+         * Post Id
+         */
+        post_id: string;
+    };
+    query?: never;
+    url: '/api/v1/posts/{post_id}';
+};
+
+export type PostsUpdatePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PostsUpdatePostError = PostsUpdatePostErrors[keyof PostsUpdatePostErrors];
+
+export type PostsUpdatePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: PostPublic;
+};
+
+export type PostsUpdatePostResponse = PostsUpdatePostResponses[keyof PostsUpdatePostResponses];
+
+export type SessionsReadUserSessionsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Page
+         */
+        page?: number;
+        /**
+         * Page Size
+         */
+        page_size?: number;
+        /**
+         * Keyword
+         */
+        keyword?: string | null;
+    };
+    url: '/api/v1/sessions';
+};
+
+export type SessionsReadUserSessionsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SessionsReadUserSessionsError = SessionsReadUserSessionsErrors[keyof SessionsReadUserSessionsErrors];
+
+export type SessionsReadUserSessionsResponses = {
+    /**
+     * Successful Response
+     */
+    200: UserSessionsPublic;
+};
+
+export type SessionsReadUserSessionsResponse = SessionsReadUserSessionsResponses[keyof SessionsReadUserSessionsResponses];
+
+export type SessionsRevokeUserSessionData = {
+    body?: never;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/api/v1/sessions/{session_id}/revoke';
+};
+
+export type SessionsRevokeUserSessionErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SessionsRevokeUserSessionError = SessionsRevokeUserSessionErrors[keyof SessionsRevokeUserSessionErrors];
+
+export type SessionsRevokeUserSessionResponses = {
+    /**
+     * Successful Response
+     */
+    200: Message;
+};
+
+export type SessionsRevokeUserSessionResponse = SessionsRevokeUserSessionResponses[keyof SessionsRevokeUserSessionResponses];
 
 export type DepartmentsReadDepartmentsData = {
     body?: never;

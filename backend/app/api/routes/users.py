@@ -3,27 +3,34 @@ import io
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
+from pydantic import ValidationError
 from sqlmodel import col, delete, func, or_, select
 
 from app import crud
 from app.api.deps import (
     CurrentUser,
     SessionDep,
-    get_current_active_superuser,
+    normalize_pagination,
     require_permission,
+    user_has_permission,
 )
 from app.core.config import settings
 from app.core.security import get_password_hash, verify_password
 from app.models import (
+    Department,
     Item,
     Message,
+    Post,
+    PostPublic,
     Role,
     RolePublic,
     UpdatePassword,
     User,
     UserCreate,
+    UserPost,
+    UserPostUpdate,
     UserPublic,
     UserRole,
     UserRoleUpdate,
@@ -37,9 +44,72 @@ from app.utils import generate_new_account_email, send_email
 router = APIRouter(prefix="/users", tags=["users"])
 
 
+def parse_csv_bool(value: str | None, default: bool = False) -> bool:
+    if value is None or value.strip() == "":
+        return default
+    normalized = value.strip().lower()
+    return normalized in {"1", "true", "yes", "y", "启用", "是"}
+
+
+def split_codes(value: str | None) -> list[str]:
+    if not value:
+        return []
+    return [code.strip() for code in value.replace(";", ",").split(",") if code.strip()]
+
+
+def resolve_department_id(session: SessionDep, code: str | None) -> uuid.UUID | None:
+    if not code:
+        return None
+    department = session.exec(select(Department).where(Department.code == code)).first()
+    if not department:
+        raise ValueError(f"department code does not exist: {code}")
+    return department.id
+
+
+def resolve_roles(session: SessionDep, codes: list[str]) -> list[Role]:
+    if not codes:
+        return []
+    roles = session.exec(select(Role).where(col(Role.code).in_(codes))).all()
+    if len(roles) != len(set(codes)):
+        found_codes = {role.code for role in roles}
+        missing_codes = sorted(set(codes) - found_codes)
+        raise ValueError(f"role codes do not exist: {', '.join(missing_codes)}")
+    return roles
+
+
+def resolve_posts(session: SessionDep, codes: list[str]) -> list[Post]:
+    if not codes:
+        return []
+    posts = session.exec(select(Post).where(col(Post.code).in_(codes))).all()
+    if len(posts) != len(set(codes)):
+        found_codes = {post.code for post in posts}
+        missing_codes = sorted(set(codes) - found_codes)
+        raise ValueError(f"post codes do not exist: {', '.join(missing_codes)}")
+    return posts
+
+
+def get_user_role_codes(session: SessionDep, user_id: uuid.UUID) -> str:
+    roles = session.exec(
+        select(Role)
+        .join(UserRole, UserRole.role_id == Role.id)
+        .where(UserRole.user_id == user_id)
+        .order_by(col(Role.sort), col(Role.created_at))
+    ).all()
+    return ",".join(role.code for role in roles)
+
+
+def get_user_post_codes(session: SessionDep, user_id: uuid.UUID) -> str:
+    posts = session.exec(
+        select(Post)
+        .join(UserPost, UserPost.post_id == Post.id)
+        .where(UserPost.user_id == user_id)
+        .order_by(col(Post.sort), col(Post.created_at))
+    ).all()
+    return ",".join(post.code for post in posts)
+
 @router.get(
     "",
-    dependencies=[Depends(get_current_active_superuser)],
+    dependencies=[Depends(require_permission("system:user:list"))],
     response_model=UsersPublic,
 )
 def read_users(
@@ -48,10 +118,12 @@ def read_users(
     page_size: int = 20,
     keyword: str | None = None,
     department_id: uuid.UUID | None = None,
+    is_active: bool | None = None,
 ) -> Any:
     """
     Retrieve users.
     """
+    page, page_size = normalize_pagination(page=page, page_size=page_size)
 
     filters = []
     if keyword:
@@ -61,6 +133,8 @@ def read_users(
         )
     if department_id:
         filters.append(col(User.department_id) == department_id)
+    if is_active is not None:
+        filters.append(User.is_active == is_active)
 
     count_statement = select(func.count()).select_from(User)
     if filters:
@@ -84,9 +158,13 @@ def read_users(
 
 
 @router.post(
-    "", dependencies=[Depends(get_current_active_superuser)], response_model=UserPublic
+    "",
+    dependencies=[Depends(require_permission("system:user:create"))],
+    response_model=UserPublic,
 )
-def create_user(*, session: SessionDep, user_in: UserCreate) -> Any:
+def create_user(
+    *, session: SessionDep, current_user: CurrentUser, user_in: UserCreate
+) -> Any:
     """
     Create new user.
     """
@@ -95,6 +173,10 @@ def create_user(*, session: SessionDep, user_in: UserCreate) -> Any:
         raise HTTPException(
             status_code=400,
             detail="The user with this email already exists in the system.",
+        )
+    if user_in.is_superuser and not current_user.is_superuser:
+        raise HTTPException(
+            status_code=403, detail="The user doesn't have enough privileges"
         )
 
     user = crud.create_user(session=session, user_create=user_in)
@@ -150,6 +232,7 @@ def update_password_me(
     hashed_password = get_password_hash(body.new_password)
     current_user.hashed_password = hashed_password
     current_user.updated_at = get_datetime_utc()
+    crud.revoke_user_sessions(session=session, user_id=current_user.id)
     session.add(current_user)
     session.commit()
     return Message(message="Password updated successfully")
@@ -178,11 +261,18 @@ def export_users(session: SessionDep) -> StreamingResponse:
             "is_active",
             "is_superuser",
             "department_id",
+            "department_code",
+            "role_codes",
+            "post_codes",
             "created_at",
         ]
     )
     users = session.exec(select(User).order_by(col(User.created_at).desc())).all()
     for user in users:
+        department_code = ""
+        if user.department_id:
+            department = session.get(Department, user.department_id)
+            department_code = department.code if department else ""
         writer.writerow(
             [
                 user.id,
@@ -191,6 +281,9 @@ def export_users(session: SessionDep) -> StreamingResponse:
                 user.is_active,
                 user.is_superuser,
                 user.department_id or "",
+                department_code,
+                get_user_role_codes(session, user.id),
+                get_user_post_codes(session, user.id),
                 user.created_at or "",
             ]
         )
@@ -202,6 +295,128 @@ def export_users(session: SessionDep) -> StreamingResponse:
     )
 
 
+@router.get(
+    "/import-template",
+    dependencies=[Depends(require_permission("system:user:create"))],
+)
+def download_user_import_template() -> StreamingResponse:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "email",
+            "password",
+            "full_name",
+            "department_code",
+            "role_codes",
+            "post_codes",
+            "is_active",
+            "is_superuser",
+        ]
+    )
+    writer.writerow(
+        [
+            "user@example.com",
+            "changethis",
+            "示例用户",
+            "headquarters",
+            "user",
+            "developer",
+            "true",
+            "false",
+        ]
+    )
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": 'attachment; filename="users-import-template.csv"'
+        },
+    )
+
+
+@router.post(
+    "/import",
+    dependencies=[Depends(require_permission("system:user:create"))],
+)
+async def import_users(
+    session: SessionDep,
+    current_user: CurrentUser,
+    file: UploadFile = File(...),
+) -> dict[str, Any]:
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only CSV files are supported")
+
+    raw_content = await file.read()
+    try:
+        content = raw_content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="CSV file must be UTF-8 encoded")
+
+    reader = csv.DictReader(io.StringIO(content))
+    required_fields = {"email", "password"}
+    if not reader.fieldnames or not required_fields <= set(reader.fieldnames):
+        raise HTTPException(
+            status_code=400, detail="CSV must contain email and password columns"
+        )
+
+    success_count = 0
+    errors: list[dict[str, Any]] = []
+    seen_emails: set[str] = set()
+    for row_number, row in enumerate(reader, start=2):
+        email = (row.get("email") or "").strip().lower()
+        password = row.get("password") or ""
+        role_codes = split_codes(row.get("role_codes"))
+        post_codes = split_codes(row.get("post_codes"))
+        try:
+            if not email:
+                raise ValueError("email is required")
+            if email in seen_emails:
+                raise ValueError("email is duplicated in CSV")
+            seen_emails.add(email)
+            if crud.get_user_by_email(session=session, email=email):
+                raise ValueError("email already exists")
+
+            is_superuser = parse_csv_bool(row.get("is_superuser"), default=False)
+            if is_superuser and not current_user.is_superuser:
+                raise ValueError("not allowed to import superuser")
+
+            department_id = resolve_department_id(
+                session, (row.get("department_code") or "").strip() or None
+            )
+            roles = resolve_roles(session, role_codes)
+            posts = resolve_posts(session, post_codes)
+            user_in = UserCreate(
+                email=email,
+                password=password,
+                full_name=(row.get("full_name") or "").strip() or None,
+                department_id=department_id,
+                is_active=parse_csv_bool(row.get("is_active"), default=True),
+                is_superuser=is_superuser,
+            )
+            user = crud.create_user(session=session, user_create=user_in)
+
+            if role_codes:
+                session.exec(delete(UserRole).where(UserRole.user_id == user.id))
+                for role in roles:
+                    session.add(UserRole(user_id=user.id, role_id=role.id))
+            for post in posts:
+                session.add(UserPost(user_id=user.id, post_id=post.id))
+            session.commit()
+            success_count += 1
+        except (ValidationError, ValueError) as exc:
+            session.rollback()
+            errors.append({"row": row_number, "error": str(exc)})
+
+    return {
+        "errors": errors,
+        "failed": len(errors),
+        "success": success_count,
+        "total": success_count + len(errors),
+    }
+
+
 @router.get("/{user_id}", response_model=UserPublic)
 def read_user_by_id(
     user_id: uuid.UUID, session: SessionDep, current_user: CurrentUser
@@ -209,14 +424,18 @@ def read_user_by_id(
     """
     Get a specific user by id.
     """
-    user = session.get(User, user_id)
-    if user == current_user:
-        return user
-    if not current_user.is_superuser:
+    if user_id == current_user.id:
+        return current_user
+    if not user_has_permission(
+        session=session,
+        current_user=current_user,
+        permission_code="system:user:list",
+    ):
         raise HTTPException(
             status_code=403,
             detail="The user doesn't have enough privileges",
         )
+    user = session.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
     return user
@@ -269,14 +488,62 @@ def update_user_roles(
     return body.role_ids
 
 
+@router.get(
+    "/{user_id}/posts",
+    dependencies=[Depends(require_permission("system:user:list"))],
+    response_model=list[PostPublic],
+)
+def read_user_posts(*, session: SessionDep, user_id: uuid.UUID) -> Any:
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    posts = session.exec(
+        select(Post)
+        .join(UserPost, UserPost.post_id == Post.id)
+        .where(UserPost.user_id == user_id)
+        .order_by(col(Post.sort), col(Post.created_at))
+    ).all()
+    return [PostPublic.model_validate(post) for post in posts]
+
+
+@router.put(
+    "/{user_id}/posts",
+    dependencies=[Depends(require_permission("system:user:update"))],
+    response_model=list[uuid.UUID],
+)
+def update_user_posts(
+    *, session: SessionDep, user_id: uuid.UUID, body: UserPostUpdate
+) -> Any:
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if body.post_ids:
+        post_count = session.exec(
+            select(func.count()).select_from(Post).where(col(Post.id).in_(body.post_ids))
+        ).one()
+        if post_count != len(set(body.post_ids)):
+            raise HTTPException(status_code=400, detail="Some posts do not exist")
+
+    session.exec(delete(UserPost).where(UserPost.user_id == user_id))
+    for post_id in set(body.post_ids):
+        session.add(UserPost(user_id=user_id, post_id=post_id))
+    user.updated_at = get_datetime_utc()
+    session.add(user)
+    session.commit()
+    return body.post_ids
+
+
 @router.patch(
     "/{user_id}",
-    dependencies=[Depends(get_current_active_superuser)],
+    dependencies=[Depends(require_permission("system:user:update"))],
     response_model=UserPublic,
 )
 def update_user(
     *,
     session: SessionDep,
+    current_user: CurrentUser,
     user_id: uuid.UUID,
     user_in: UserUpdate,
 ) -> Any:
@@ -289,6 +556,14 @@ def update_user(
         raise HTTPException(
             status_code=404,
             detail="The user with this id does not exist in the system",
+        )
+    if db_user.is_superuser and not current_user.is_superuser:
+        raise HTTPException(
+            status_code=403, detail="The user doesn't have enough privileges"
+        )
+    if user_in.is_superuser is not None and not current_user.is_superuser:
+        raise HTTPException(
+            status_code=403, detail="The user doesn't have enough privileges"
         )
     if user_in.email:
         existing_user = crud.get_user_by_email(session=session, email=user_in.email)
@@ -314,7 +589,7 @@ def update_user(
 
 @router.delete(
     "/{user_id}",
-    dependencies=[Depends(get_current_active_superuser)],
+    dependencies=[Depends(require_permission("system:user:delete"))],
     status_code=204,
 )
 def delete_user(
@@ -329,6 +604,10 @@ def delete_user(
     if user == current_user:
         raise HTTPException(
             status_code=403, detail="Super users are not allowed to delete themselves"
+        )
+    if user.is_superuser and not current_user.is_superuser:
+        raise HTTPException(
+            status_code=403, detail="The user doesn't have enough privileges"
         )
     if user.is_superuser:
         superuser_count = session.exec(

@@ -51,6 +51,16 @@ const routes: RouteRecordRaw[] = [
         path: 'departments',
       },
       {
+        component: () => import('#/views/system/posts/index.vue'),
+        meta: {
+          authority: ['system:post:list'],
+          icon: 'lucide:briefcase-business',
+          title: 'menu.systemPosts',
+        },
+        name: 'SystemPosts',
+        path: 'posts',
+      },
+      {
         component: () => import('#/views/system/dictionaries/index.vue'),
         meta: {
           authority: ['system:dict:list'],
@@ -69,6 +79,16 @@ const routes: RouteRecordRaw[] = [
         },
         name: 'SystemSettings',
         path: 'settings',
+      },
+      {
+        component: () => import('#/views/system/online-users/index.vue'),
+        meta: {
+          authority: ['system:session:list'],
+          icon: 'lucide:monitor-smartphone',
+          title: 'menu.systemOnlineUsers',
+        },
+        name: 'SystemOnlineUsers',
+        path: 'online-users',
       },
     ],
   },

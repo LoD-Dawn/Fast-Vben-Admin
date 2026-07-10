@@ -71,3 +71,15 @@ def test_normal_user_cannot_list_files(
     )
 
     assert response.status_code == 403
+
+
+def test_normal_user_cannot_upload_managed_file(
+    client: TestClient, normal_user_token_headers: dict[str, str]
+) -> None:
+    response = client.post(
+        f"{settings.API_V1_STR}/files/upload",
+        headers=normal_user_token_headers,
+        files={"file": ("hello.txt", BytesIO(b"hello"), "text/plain")},
+    )
+
+    assert response.status_code == 403

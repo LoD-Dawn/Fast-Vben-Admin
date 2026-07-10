@@ -102,6 +102,56 @@ def test_superuser_can_create_dictionary_type_and_item(
             )
 
 
+def test_dictionary_item_value_must_be_unique_in_type(
+    client: TestClient, superuser_token_headers: dict[str, str]
+) -> None:
+    dictionary_code = f"dict_{random_lower_string()}"
+    type_id: str | None = None
+    item_id: str | None = None
+    try:
+        create_type_response = client.post(
+            f"{settings.API_V1_STR}/dictionary-types",
+            headers=superuser_token_headers,
+            json={
+                "code": dictionary_code,
+                "name": "测试字典",
+                "is_active": True,
+            },
+        )
+        assert create_type_response.status_code == 200
+        type_id = create_type_response.json()["id"]
+
+        payload = {
+            "type_id": type_id,
+            "label": "测试项",
+            "value": "same",
+            "sort": 0,
+            "is_active": True,
+        }
+        create_item_response = client.post(
+            f"{settings.API_V1_STR}/dictionary-items",
+            headers=superuser_token_headers,
+            json=payload,
+        )
+        assert create_item_response.status_code == 200
+        item_id = create_item_response.json()["id"]
+
+        duplicate_response = client.post(
+            f"{settings.API_V1_STR}/dictionary-items",
+            headers=superuser_token_headers,
+            json={**payload, "label": "重复项"},
+        )
+        assert duplicate_response.status_code == 409
+    finally:
+        if type_id:
+            _delete_dictionary_type(
+                client,
+                superuser_token_headers,
+                type_id,
+                item_id,
+            )
+
+
 def test_superuser_can_read_and_update_settings(
     client: TestClient, superuser_token_headers: dict[str, str]
 ) -> None:
@@ -129,3 +179,16 @@ def test_public_settings_are_readable(client: TestClient) -> None:
     keys = {setting["key"] for setting in response.json()}
     assert "system.name" in keys
     assert "auth.allow_register" in keys
+
+
+def test_json_setting_value_must_be_valid_json(
+    client: TestClient, superuser_token_headers: dict[str, str]
+) -> None:
+    response = client.patch(
+        f"{settings.API_V1_STR}/settings/system.name",
+        headers=superuser_token_headers,
+        json={"value_type": "json", "value": "{not-json"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["message"] == "Setting value must be JSON"

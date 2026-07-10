@@ -136,7 +136,7 @@ function onCreate() {
     <FormDrawer @success="onRefresh" />
     <Grid table-title="公告列表">
       <template #toolbar-tools>
-        <Button type="primary" @click="onCreate">
+        <Button v-access:code="'system:notice:create'" type="primary" @click="onCreate">
           <Plus class="size-5" />
           新增公告
         </Button>

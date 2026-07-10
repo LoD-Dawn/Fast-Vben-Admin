@@ -7,7 +7,7 @@ import type { DepartmentRecord, UserRecord } from '#/api';
 
 import { computed, onMounted, ref } from 'vue';
 
-import { Page, Tree, useVbenDrawer } from '@vben/common-ui';
+import { Page, Tree, useVbenDrawer, useVbenModal } from '@vben/common-ui';
 import { IconifyIcon, Plus } from '@vben/icons';
 
 import { Button, Card, InputSearch, message } from 'ant-design-vue';
@@ -20,6 +20,7 @@ import {
   listUsersApi,
   updateUserApi,
   usersExportPath,
+  usersImportTemplatePath,
 } from '#/api';
 
 import { $t } from '#/locales';
@@ -27,6 +28,7 @@ import { $t } from '#/locales';
 import { buildDepartmentTree, confirmAction } from '../shared/utils';
 import { useColumns, useGridFormSchema } from './data';
 import Form from './modules/form.vue';
+import Import from './modules/import.vue';
 
 const allDepartments = ref<DepartmentRecord[]>([]);
 const deptSearchValue = ref('');
@@ -44,6 +46,11 @@ const deptTreeData = computed(() => {
 
 const [FormDrawer, formDrawerApi] = useVbenDrawer({
   connectedComponent: Form,
+  destroyOnClose: true,
+});
+
+const [ImportModal, importModalApi] = useVbenModal({
+  connectedComponent: Import,
   destroyOnClose: true,
 });
 
@@ -109,6 +116,10 @@ const [Grid, gridApi] = useVbenVxeGrid({
         query: async ({ page }, formValues) => {
           return await listUsersApi({
             department_id: selectedDeptId.value || undefined,
+            is_active:
+              formValues.is_active === undefined || formValues.is_active === null
+                ? undefined
+                : formValues.is_active,
             keyword: formValues.keyword || undefined,
             page: page.currentPage,
             page_size: page.pageSize,
@@ -141,6 +152,14 @@ async function exportUsers() {
   await downloadApi(usersExportPath, 'users.csv');
 }
 
+async function downloadTemplate() {
+  await downloadApi(usersImportTemplatePath, 'users-import-template.csv');
+}
+
+function openImport() {
+  importModalApi.open();
+}
+
 function selectDept(item?: { value: DepartmentRecord }) {
   selectedDeptId.value = item?.value.id ?? '';
   gridApi.query();
@@ -163,6 +182,7 @@ onMounted(loadDepartments);
 <template>
   <Page auto-content-height>
     <FormDrawer @success="onRefresh" />
+    <ImportModal @success="onRefresh" />
     <div class="flex size-full">
       <Card :bordered="false" class="dept-tree-card w-1/6 min-w-[220px]">
         <InputSearch
@@ -204,11 +224,23 @@ onMounted(loadDepartments);
       <div class="ml-4 w-5/6 min-w-0">
         <Grid :table-title="$t('system.user.list')">
           <template #toolbar-tools>
-            <Button type="primary" @click="onCreate">
+            <Button v-access:code="'system:user:create'" type="primary" @click="onCreate">
               <Plus class="size-5" />
               {{ $t('system.user.createUser') }}
             </Button>
-            <Button class="ml-2" @click="exportUsers">{{ $t('system.user.export') }}</Button>
+            <Button v-access:code="'system:user:list'" class="ml-2" @click="exportUsers">
+              {{ $t('system.user.export') }}
+            </Button>
+            <Button
+              v-access:code="'system:user:create'"
+              class="ml-2"
+              @click="downloadTemplate"
+            >
+              {{ $t('system.user.template') }}
+            </Button>
+            <Button v-access:code="'system:user:create'" class="ml-2" @click="openImport">
+              {{ $t('system.user.import') }}
+            </Button>
           </template>
         </Grid>
       </div>

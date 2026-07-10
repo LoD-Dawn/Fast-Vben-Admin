@@ -4,6 +4,7 @@ import { devices } from '@playwright/test';
 
 const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:5173';
 const browserChannel = process.env.E2E_BROWSER_CHANNEL ?? (process.env.CI ? undefined : 'chrome');
+const devServerUrl = new URL(baseURL);
 
 const config: PlaywrightTestConfig = {
   expect: {
@@ -35,7 +36,7 @@ const config: PlaywrightTestConfig = {
   webServer: process.env.E2E_SKIP_WEB_SERVER
     ? undefined
     : {
-        command: 'pnpm dev --host localhost',
+        command: `pnpm dev --host ${devServerUrl.hostname} --port ${devServerUrl.port || '5173'}`,
         reuseExistingServer: true,
         timeout: 120_000,
         url: baseURL,

@@ -16,6 +16,7 @@
     "emailInvalid": "请输入有效邮箱",
     "fullName": "姓名",
     "roles": "角色",
+    "posts": "岗位",
     "password": "初始密码",
     "newPassword": "新密码",
     "superuser": "超级管理员",
@@ -25,7 +26,14 @@
     "deleteSuccess": "用户已删除",
     "deleteFailed": "删除失败",
     "createUser": "新增用户",
-    "export": "导出"
+    "export": "导出",
+    "template": "模板",
+    "import": "导入",
+    "importTitle": "导入用户",
+    "importHint": "点击或拖拽 CSV 文件到此处上传",
+    "importFileType": "仅支持 CSV 文件",
+    "importResult": "导入完成：成功 {0} 条，失败 {1} 条",
+    "importSuccess": "导入成功：{0} 条"
   },
   "dept": {
     "list": "全部部门",
@@ -38,6 +46,34 @@
     "status": "状态",
     "title": "部门管理",
     "appendChild": "新增下级"
+  },
+  "post": {
+    "title": "岗位管理",
+    "list": "岗位列表",
+    "name": "岗位",
+    "postName": "岗位名称",
+    "postCode": "岗位编码",
+    "status": "状态",
+    "remark": "备注",
+    "createTime": "创建时间",
+    "operation": "操作"
+  },
+  "onlineUser": {
+    "title": "在线用户",
+    "list": "在线用户列表",
+    "name": "用户",
+    "email": "邮箱",
+    "fullName": "姓名",
+    "ip": "登录 IP",
+    "userAgent": "用户代理",
+    "loginTime": "登录时间",
+    "lastActiveTime": "最后活跃时间",
+    "expiresAt": "过期时间",
+    "operation": "操作",
+    "revoke": "强制下线",
+    "revokeTitle": "强制下线",
+    "revokeContent": "确认强制用户 {0} 下线吗？",
+    "revokeSuccess": "已强制下线"
   },
   "menu": {
     "list": "菜单列表",

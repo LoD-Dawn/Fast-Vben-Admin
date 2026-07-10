@@ -110,6 +110,12 @@ def test_reset_password(client: TestClient, db: Session) -> None:
     verified, _ = verify_password(new_password, user.hashed_password)
     assert verified
 
+    rejected_response = client.get(
+        f"{settings.API_V1_STR}/users/me",
+        headers=headers,
+    )
+    assert rejected_response.status_code == 403
+
 
 def test_reset_password_invalid_token(
     client: TestClient, superuser_token_headers: dict[str, str]

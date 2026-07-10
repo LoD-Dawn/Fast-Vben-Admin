@@ -1,9 +1,10 @@
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends
 from sqlmodel import col, func, or_, select
 
-from app.api.deps import SessionDep, require_permission
+from app.api.deps import SessionDep, normalize_pagination, require_permission
 from app.models import (
     LoginLog,
     LoginLogPublic,
@@ -27,10 +28,17 @@ def read_login_logs(
     page_size: int = 20,
     keyword: str | None = None,
     status: str | None = None,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
 ) -> Any:
+    page, page_size = normalize_pagination(page=page, page_size=page_size)
     filters = []
     if status:
         filters.append(LoginLog.status == status)
+    if created_from:
+        filters.append(LoginLog.created_at >= created_from)
+    if created_to:
+        filters.append(LoginLog.created_at <= created_to)
     if keyword:
         pattern = f"%{keyword}%"
         filters.append(
@@ -75,12 +83,19 @@ def read_operation_logs(
     keyword: str | None = None,
     method: str | None = None,
     status_code: int | None = None,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
 ) -> Any:
+    page, page_size = normalize_pagination(page=page, page_size=page_size)
     filters = []
     if method:
         filters.append(OperationLog.method == method.upper())
     if status_code:
         filters.append(OperationLog.status_code == status_code)
+    if created_from:
+        filters.append(OperationLog.created_at >= created_from)
+    if created_to:
+        filters.append(OperationLog.created_at <= created_to)
     if keyword:
         pattern = f"%{keyword}%"
         filters.append(

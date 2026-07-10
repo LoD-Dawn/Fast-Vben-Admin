@@ -38,6 +38,8 @@ const LEGACY_MENU_TITLE_KEYS: Record<string, string> = {
   菜单管理: 'menu.systemMenus',
   角色管理: 'menu.systemRoles',
   部门管理: 'menu.systemDepartments',
+  岗位管理: 'menu.systemPosts',
+  在线用户: 'menu.systemOnlineUsers',
   我的消息: 'menu.messages',
   通知公告: 'menu.notices',
 };

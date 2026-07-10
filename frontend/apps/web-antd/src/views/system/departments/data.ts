@@ -124,11 +124,16 @@ export function useColumns(
         name: 'CellOperation',
         options: [
           {
+            auth: 'system:department:create',
             code: 'append',
             text: $t('system.dept.appendChild'),
           },
-          'edit',
           {
+            auth: 'system:department:update',
+            code: 'edit',
+          },
+          {
+            auth: 'system:department:delete',
             code: 'delete',
             disabled: (row: DepartmentRecord) => hasChildren?.(row.id) ?? false,
           },

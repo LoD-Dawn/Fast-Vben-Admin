@@ -20,12 +20,18 @@ import { preferences, usePreferences } from '@vben/preferences';
 import { useAccessStore, useUserStore } from '@vben/stores';
 import { formatDateTime, openWindow } from '@vben/utils';
 
-import { listMyMessagesApi, markMessageReadApi } from '#/api';
+import {
+  getUnreadMessageCountApi,
+  listMyMessagesApi,
+  markAllMessagesReadApi,
+  markMessageReadApi,
+} from '#/api';
 import { $t } from '#/locales';
 import { useAuthStore } from '#/store';
 import LoginForm from '#/views/_core/authentication/login.vue';
 
 const notifications = ref<NotificationItem[]>([]);
+const unreadCount = ref(0);
 
 function mapMessageToNotification(
   message: UserMessageRecord,
@@ -43,10 +49,15 @@ function mapMessageToNotification(
 
 async function fetchNotifications() {
   try {
-    const result = await listMyMessagesApi({ page: 1, page_size: 10 });
+    const [result, unread] = await Promise.all([
+      listMyMessagesApi({ page: 1, page_size: 10 }),
+      getUnreadMessageCountApi(),
+    ]);
     notifications.value = result.items.map(mapMessageToNotification);
+    unreadCount.value = unread.count;
   } catch {
     notifications.value = [];
+    unreadCount.value = 0;
   }
 }
 
@@ -66,14 +77,13 @@ watch(
       void fetchNotifications();
     } else {
       notifications.value = [];
+      unreadCount.value = 0;
     }
   },
 );
 const { destroyWatermark, updateWatermark } = useWatermark();
 const { isDark } = usePreferences();
-const showDot = computed(() =>
-  notifications.value.some((item) => !item.isRead),
-);
+const showDot = computed(() => unreadCount.value > 0);
 
 const menus = computed(() => [
   {
@@ -125,11 +135,11 @@ async function handleLogout() {
 }
 
 async function handleNoticeClear() {
-  const unreadItems = notifications.value.filter((item) => !item.isRead);
-  await Promise.all(
-    unreadItems.map((item) => markMessageReadApi(String(item.id))),
-  );
+  if (unreadCount.value > 0) {
+    await markAllMessagesReadApi();
+  }
   notifications.value = [];
+  unreadCount.value = 0;
 }
 
 async function markRead(id: number | string) {
@@ -140,6 +150,7 @@ async function markRead(id: number | string) {
   try {
     await markMessageReadApi(String(id));
     item.isRead = true;
+    unreadCount.value = Math.max(0, unreadCount.value - 1);
   } catch {
     // keep unread state on failure
   }
@@ -150,17 +161,15 @@ function remove(id: number | string) {
 }
 
 async function handleMakeAll() {
-  const unreadItems = notifications.value.filter((item) => !item.isRead);
-  if (unreadItems.length === 0) {
+  if (unreadCount.value === 0) {
     return;
   }
   try {
-    await Promise.all(
-      unreadItems.map((item) => markMessageReadApi(String(item.id))),
-    );
+    await markAllMessagesReadApi();
     notifications.value.forEach((item) => {
       item.isRead = true;
     });
+    unreadCount.value = 0;
   } catch {
     await fetchNotifications();
   }
@@ -253,6 +262,7 @@ watch(
     </template>
     <template #notification>
       <Notification
+        :count="unreadCount"
         :dot="showDot"
         :notifications="notifications"
         @clear="handleNoticeClear"

@@ -7,8 +7,10 @@ import { useVbenDrawer } from '@vben/common-ui';
 
 import {
   createUserApi,
+  getUserPostsApi,
   getUserRolesApi,
   updateUserApi,
+  updateUserPostsApi,
   updateUserRolesApi,
 } from '#/api';
 
@@ -32,7 +34,12 @@ const [Drawer, drawerApi] = useVbenDrawer({
     if (!valid) return;
 
     const values = await formApi.getValues();
-    const { password, role_ids: roleIds = [], ...payload } = values;
+    const {
+      password,
+      post_ids: postIds = [],
+      role_ids: roleIds = [],
+      ...payload
+    } = values;
     const userPayload = payload as UserCreatePayload;
 
     if (!userId.value && !password) {
@@ -47,6 +54,7 @@ const [Drawer, drawerApi] = useVbenDrawer({
           ...(password ? { password } : {}),
         } as UserUpdatePayload);
         await updateUserRolesApi(userId.value, { role_ids: roleIds });
+        await updateUserPostsApi(userId.value, { post_ids: postIds });
       } else {
         const user = await createUserApi({
           ...userPayload,
@@ -54,6 +62,9 @@ const [Drawer, drawerApi] = useVbenDrawer({
         });
         if (roleIds.length > 0) {
           await updateUserRolesApi(user.id, { role_ids: roleIds });
+        }
+        if (postIds.length > 0) {
+          await updateUserPostsApi(user.id, { post_ids: postIds });
         }
       }
       emits('success');
@@ -73,12 +84,16 @@ const [Drawer, drawerApi] = useVbenDrawer({
       schema: useFormSchema(!!data?.id),
     });
 
-    if (data) {
-      const userRoles = await getUserRolesApi(data.id);
+    if (data?.id) {
+      const [userRoles, userPosts] = await Promise.all([
+        getUserRolesApi(data.id),
+        getUserPostsApi(data.id),
+      ]);
       formApi.setValues({
         ...data,
         department_id: data.department_id || undefined,
         password: '',
+        post_ids: userPosts.map((post) => post.id),
         role_ids: userRoles.map((role) => role.id),
       });
     }

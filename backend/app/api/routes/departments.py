@@ -4,7 +4,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlmodel import col, func, select
 
-from app.api.deps import SessionDep, require_permission
+from app.api.deps import SessionDep, normalize_pagination, require_permission
 from app.models import (
     Department,
     DepartmentCreate,
@@ -18,6 +18,22 @@ from app.models import (
 router = APIRouter(prefix="/departments", tags=["departments"])
 
 
+def is_descendant_department(
+    *, session: SessionDep, department_id: uuid.UUID, possible_descendant_id: uuid.UUID
+) -> bool:
+    current_id: uuid.UUID | None = possible_descendant_id
+    visited: set[uuid.UUID] = set()
+    while current_id:
+        if current_id == department_id:
+            return True
+        if current_id in visited:
+            return True
+        visited.add(current_id)
+        current = session.get(Department, current_id)
+        current_id = current.parent_id if current else None
+    return False
+
+
 @router.get(
     "",
     dependencies=[Depends(require_permission("system:department:list"))],
@@ -29,6 +45,9 @@ def read_departments(
     page_size: int = 200,
     keyword: str | None = None,
 ) -> Any:
+    page, page_size = normalize_pagination(
+        page=page, page_size=page_size, max_page_size=500
+    )
     filters = []
     if keyword:
         pattern = f"%{keyword}%"
@@ -104,6 +123,14 @@ def update_department(
         )
     if department_in.parent_id and not session.get(Department, department_in.parent_id):
         raise HTTPException(status_code=400, detail="Parent department does not exist")
+    if department_in.parent_id and is_descendant_department(
+        session=session,
+        department_id=department_id,
+        possible_descendant_id=department_in.parent_id,
+    ):
+        raise HTTPException(
+            status_code=400, detail="Department parent cannot be a child"
+        )
     if department_in.leader_user_id and not session.get(User, department_in.leader_user_id):
         raise HTTPException(status_code=400, detail="Leader user does not exist")
     if department_in.code and department_in.code != department.code:

@@ -2,7 +2,7 @@
 
 import { type Client, type ClientMeta, formDataBodySerializer, type Options as Options2, type RequestResult, type TDataShape, urlSearchParamsBodySerializer } from './client';
 import { client } from './client.gen';
-import type { DepartmentsCreateDepartmentData, DepartmentsCreateDepartmentErrors, DepartmentsCreateDepartmentResponses, DepartmentsDeleteDepartmentData, DepartmentsDeleteDepartmentErrors, DepartmentsDeleteDepartmentResponses, DepartmentsReadDepartmentsData, DepartmentsReadDepartmentsErrors, DepartmentsReadDepartmentsResponses, DepartmentsUpdateDepartmentData, DepartmentsUpdateDepartmentErrors, DepartmentsUpdateDepartmentResponses, DictionariesCreateDictionaryItemData, DictionariesCreateDictionaryItemErrors, DictionariesCreateDictionaryItemResponses, DictionariesCreateDictionaryTypeData, DictionariesCreateDictionaryTypeErrors, DictionariesCreateDictionaryTypeResponses, DictionariesDeleteDictionaryItemData, DictionariesDeleteDictionaryItemErrors, DictionariesDeleteDictionaryItemResponses, DictionariesDeleteDictionaryTypeData, DictionariesDeleteDictionaryTypeErrors, DictionariesDeleteDictionaryTypeResponses, DictionariesReadDictionaryItemsByCodeData, DictionariesReadDictionaryItemsByCodeErrors, DictionariesReadDictionaryItemsByCodeResponses, DictionariesReadDictionaryItemsData, DictionariesReadDictionaryItemsErrors, DictionariesReadDictionaryItemsResponses, DictionariesReadDictionaryTypesData, DictionariesReadDictionaryTypesErrors, DictionariesReadDictionaryTypesResponses, DictionariesUpdateDictionaryItemData, DictionariesUpdateDictionaryItemErrors, DictionariesUpdateDictionaryItemResponses, DictionariesUpdateDictionaryTypeData, DictionariesUpdateDictionaryTypeErrors, DictionariesUpdateDictionaryTypeResponses, FilesDeleteFileData, FilesDeleteFileErrors, FilesDeleteFileResponses, FilesDownloadFileData, FilesDownloadFileErrors, FilesDownloadFileResponses, FilesReadFileData, FilesReadFileErrors, FilesReadFileResponses, FilesReadFilesData, FilesReadFilesErrors, FilesReadFilesResponses, FilesUploadAvatarData, FilesUploadAvatarErrors, FilesUploadAvatarResponses, FilesUploadFileData, FilesUploadFileErrors, FilesUploadFileResponses, ItemsCreateItemData, ItemsCreateItemErrors, ItemsCreateItemResponses, ItemsDeleteItemData, ItemsDeleteItemErrors, ItemsDeleteItemResponses, ItemsDownloadImportTemplateData, ItemsDownloadImportTemplateResponses, ItemsExportItemsData, ItemsExportItemsResponses, ItemsImportItemsData, ItemsImportItemsErrors, ItemsImportItemsResponses, ItemsReadItemData, ItemsReadItemErrors, ItemsReadItemResponses, ItemsReadItemsData, ItemsReadItemsErrors, ItemsReadItemsResponses, ItemsUpdateItemData, ItemsUpdateItemErrors, ItemsUpdateItemResponses, LoginLoginAccessTokenData, LoginLoginAccessTokenErrors, LoginLoginAccessTokenResponses, LoginRecoverPasswordData, LoginRecoverPasswordErrors, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentErrors, LoginRecoverPasswordHtmlContentResponses, LoginRecoverPasswordResponses, LoginResetPasswordData, LoginResetPasswordErrors, LoginResetPasswordResponses, LoginTestTokenData, LoginTestTokenResponses, LogsReadLoginLogsData, LogsReadLoginLogsErrors, LogsReadLoginLogsResponses, LogsReadOperationLogsData, LogsReadOperationLogsErrors, LogsReadOperationLogsResponses, MenusCreateMenuData, MenusCreateMenuErrors, MenusCreateMenuResponses, MenusDeleteMenuData, MenusDeleteMenuErrors, MenusDeleteMenuResponses, MenusReadMenusData, MenusReadMenusErrors, MenusReadMenusResponses, MenusReadMyMenusData, MenusReadMyMenusResponses, MenusReadMyPermissionsData, MenusReadMyPermissionsResponses, MenusUpdateMenuData, MenusUpdateMenuErrors, MenusUpdateMenuResponses, NoticesCreateNoticeData, NoticesCreateNoticeErrors, NoticesCreateNoticeResponses, NoticesDeleteNoticeData, NoticesDeleteNoticeErrors, NoticesDeleteNoticeResponses, NoticesMarkMessageReadData, NoticesMarkMessageReadErrors, NoticesMarkMessageReadResponses, NoticesPublishNoticeData, NoticesPublishNoticeErrors, NoticesPublishNoticeResponses, NoticesReadCurrentNoticesData, NoticesReadCurrentNoticesResponses, NoticesReadMyMessagesData, NoticesReadMyMessagesErrors, NoticesReadMyMessagesResponses, NoticesReadNoticesData, NoticesReadNoticesErrors, NoticesReadNoticesResponses, NoticesUpdateNoticeData, NoticesUpdateNoticeErrors, NoticesUpdateNoticeResponses, NoticesWithdrawNoticeData, NoticesWithdrawNoticeErrors, NoticesWithdrawNoticeResponses, PermissionsReadMyPermissionsData, PermissionsReadMyPermissionsResponses, PrivateCreateUserData, PrivateCreateUserErrors, PrivateCreateUserResponses, RolesCreateRoleData, RolesCreateRoleErrors, RolesCreateRoleResponses, RolesDeleteRoleData, RolesDeleteRoleErrors, RolesDeleteRoleResponses, RolesReadRoleData, RolesReadRoleErrors, RolesReadRoleMenusData, RolesReadRoleMenusErrors, RolesReadRoleMenusResponses, RolesReadRoleResponses, RolesReadRolesData, RolesReadRolesErrors, RolesReadRolesResponses, RolesUpdateRoleData, RolesUpdateRoleErrors, RolesUpdateRoleMenusData, RolesUpdateRoleMenusErrors, RolesUpdateRoleMenusResponses, RolesUpdateRoleResponses, SettingsReadPublicSettingsData, SettingsReadPublicSettingsResponses, SettingsReadSettingsData, SettingsReadSettingsErrors, SettingsReadSettingsResponses, SettingsUpdateSettingData, SettingsUpdateSettingErrors, SettingsUpdateSettingResponses, UsersCreateUserData, UsersCreateUserErrors, UsersCreateUserResponses, UsersDeleteUserData, UsersDeleteUserErrors, UsersDeleteUserResponses, UsersExportUsersData, UsersExportUsersResponses, UsersReadUserByIdData, UsersReadUserByIdErrors, UsersReadUserByIdResponses, UsersReadUserMeData, UsersReadUserMeResponses, UsersReadUserRolesData, UsersReadUserRolesErrors, UsersReadUserRolesResponses, UsersReadUsersData, UsersReadUsersErrors, UsersReadUsersResponses, UsersUpdatePasswordMeData, UsersUpdatePasswordMeErrors, UsersUpdatePasswordMeResponses, UsersUpdateUserData, UsersUpdateUserErrors, UsersUpdateUserMeData, UsersUpdateUserMeErrors, UsersUpdateUserMeResponses, UsersUpdateUserResponses, UsersUpdateUserRolesData, UsersUpdateUserRolesErrors, UsersUpdateUserRolesResponses, UtilsHealthCheckData, UtilsHealthCheckResponses, UtilsTestEmailData, UtilsTestEmailErrors, UtilsTestEmailResponses } from './types.gen';
+import type { DashboardReadDashboardAnalyticsData, DashboardReadDashboardAnalyticsResponses, DepartmentsCreateDepartmentData, DepartmentsCreateDepartmentErrors, DepartmentsCreateDepartmentResponses, DepartmentsDeleteDepartmentData, DepartmentsDeleteDepartmentErrors, DepartmentsDeleteDepartmentResponses, DepartmentsReadDepartmentsData, DepartmentsReadDepartmentsErrors, DepartmentsReadDepartmentsResponses, DepartmentsUpdateDepartmentData, DepartmentsUpdateDepartmentErrors, DepartmentsUpdateDepartmentResponses, DictionariesCreateDictionaryItemData, DictionariesCreateDictionaryItemErrors, DictionariesCreateDictionaryItemResponses, DictionariesCreateDictionaryTypeData, DictionariesCreateDictionaryTypeErrors, DictionariesCreateDictionaryTypeResponses, DictionariesDeleteDictionaryItemData, DictionariesDeleteDictionaryItemErrors, DictionariesDeleteDictionaryItemResponses, DictionariesDeleteDictionaryTypeData, DictionariesDeleteDictionaryTypeErrors, DictionariesDeleteDictionaryTypeResponses, DictionariesReadDictionaryItemsByCodeData, DictionariesReadDictionaryItemsByCodeErrors, DictionariesReadDictionaryItemsByCodeResponses, DictionariesReadDictionaryItemsData, DictionariesReadDictionaryItemsErrors, DictionariesReadDictionaryItemsResponses, DictionariesReadDictionaryTypesData, DictionariesReadDictionaryTypesErrors, DictionariesReadDictionaryTypesResponses, DictionariesUpdateDictionaryItemData, DictionariesUpdateDictionaryItemErrors, DictionariesUpdateDictionaryItemResponses, DictionariesUpdateDictionaryTypeData, DictionariesUpdateDictionaryTypeErrors, DictionariesUpdateDictionaryTypeResponses, FilesDeleteFileData, FilesDeleteFileErrors, FilesDeleteFileResponses, FilesDownloadFileData, FilesDownloadFileErrors, FilesDownloadFileResponses, FilesReadFileData, FilesReadFileErrors, FilesReadFileResponses, FilesReadFilesData, FilesReadFilesErrors, FilesReadFilesResponses, FilesUploadAvatarData, FilesUploadAvatarErrors, FilesUploadAvatarResponses, FilesUploadFileData, FilesUploadFileErrors, FilesUploadFileResponses, ItemsCreateItemData, ItemsCreateItemErrors, ItemsCreateItemResponses, ItemsDeleteItemData, ItemsDeleteItemErrors, ItemsDeleteItemResponses, ItemsDownloadImportTemplateData, ItemsDownloadImportTemplateResponses, ItemsExportItemsData, ItemsExportItemsResponses, ItemsImportItemsData, ItemsImportItemsErrors, ItemsImportItemsResponses, ItemsReadItemData, ItemsReadItemErrors, ItemsReadItemResponses, ItemsReadItemsData, ItemsReadItemsErrors, ItemsReadItemsResponses, ItemsUpdateItemData, ItemsUpdateItemErrors, ItemsUpdateItemResponses, LoginLoginAccessTokenData, LoginLoginAccessTokenErrors, LoginLoginAccessTokenResponses, LoginRecoverPasswordData, LoginRecoverPasswordErrors, LoginRecoverPasswordHtmlContentData, LoginRecoverPasswordHtmlContentErrors, LoginRecoverPasswordHtmlContentResponses, LoginRecoverPasswordResponses, LoginResetPasswordData, LoginResetPasswordErrors, LoginResetPasswordResponses, LoginTestTokenData, LoginTestTokenResponses, LogsReadLoginLogsData, LogsReadLoginLogsErrors, LogsReadLoginLogsResponses, LogsReadOperationLogsData, LogsReadOperationLogsErrors, LogsReadOperationLogsResponses, MenusCreateMenuData, MenusCreateMenuErrors, MenusCreateMenuResponses, MenusDeleteMenuData, MenusDeleteMenuErrors, MenusDeleteMenuResponses, MenusReadMenusData, MenusReadMenusErrors, MenusReadMenusResponses, MenusReadMyMenusData, MenusReadMyMenusResponses, MenusReadMyPermissionsData, MenusReadMyPermissionsResponses, MenusUpdateMenuData, MenusUpdateMenuErrors, MenusUpdateMenuResponses, NoticesCreateNoticeData, NoticesCreateNoticeErrors, NoticesCreateNoticeResponses, NoticesDeleteNoticeData, NoticesDeleteNoticeErrors, NoticesDeleteNoticeResponses, NoticesMarkAllMessagesReadData, NoticesMarkAllMessagesReadResponses, NoticesMarkMessageReadData, NoticesMarkMessageReadErrors, NoticesMarkMessageReadResponses, NoticesPublishNoticeData, NoticesPublishNoticeErrors, NoticesPublishNoticeResponses, NoticesReadCurrentNoticesData, NoticesReadCurrentNoticesResponses, NoticesReadMyMessagesData, NoticesReadMyMessagesErrors, NoticesReadMyMessagesResponses, NoticesReadMyUnreadMessageCountData, NoticesReadMyUnreadMessageCountResponses, NoticesReadNoticesData, NoticesReadNoticesErrors, NoticesReadNoticesResponses, NoticesUpdateNoticeData, NoticesUpdateNoticeErrors, NoticesUpdateNoticeResponses, NoticesWithdrawNoticeData, NoticesWithdrawNoticeErrors, NoticesWithdrawNoticeResponses, PermissionsReadMyPermissionsData, PermissionsReadMyPermissionsResponses, PostsCreatePostData, PostsCreatePostErrors, PostsCreatePostResponses, PostsDeletePostData, PostsDeletePostErrors, PostsDeletePostResponses, PostsReadPostsData, PostsReadPostsErrors, PostsReadPostsResponses, PostsUpdatePostData, PostsUpdatePostErrors, PostsUpdatePostResponses, PrivateCreateUserData, PrivateCreateUserErrors, PrivateCreateUserResponses, RolesCreateRoleData, RolesCreateRoleErrors, RolesCreateRoleResponses, RolesDeleteRoleData, RolesDeleteRoleErrors, RolesDeleteRoleResponses, RolesReadRoleData, RolesReadRoleErrors, RolesReadRoleMenusData, RolesReadRoleMenusErrors, RolesReadRoleMenusResponses, RolesReadRoleResponses, RolesReadRolesData, RolesReadRolesErrors, RolesReadRolesResponses, RolesUpdateRoleData, RolesUpdateRoleErrors, RolesUpdateRoleMenusData, RolesUpdateRoleMenusErrors, RolesUpdateRoleMenusResponses, RolesUpdateRoleResponses, SessionsReadUserSessionsData, SessionsReadUserSessionsErrors, SessionsReadUserSessionsResponses, SessionsRevokeUserSessionData, SessionsRevokeUserSessionErrors, SessionsRevokeUserSessionResponses, SettingsReadPublicSettingsData, SettingsReadPublicSettingsResponses, SettingsReadSettingsData, SettingsReadSettingsErrors, SettingsReadSettingsResponses, SettingsUpdateSettingData, SettingsUpdateSettingErrors, SettingsUpdateSettingResponses, UsersCreateUserData, UsersCreateUserErrors, UsersCreateUserResponses, UsersDeleteUserData, UsersDeleteUserErrors, UsersDeleteUserResponses, UsersDownloadUserImportTemplateData, UsersDownloadUserImportTemplateResponses, UsersExportUsersData, UsersExportUsersResponses, UsersImportUsersData, UsersImportUsersErrors, UsersImportUsersResponses, UsersReadUserByIdData, UsersReadUserByIdErrors, UsersReadUserByIdResponses, UsersReadUserMeData, UsersReadUserMeResponses, UsersReadUserPostsData, UsersReadUserPostsErrors, UsersReadUserPostsResponses, UsersReadUserRolesData, UsersReadUserRolesErrors, UsersReadUserRolesResponses, UsersReadUsersData, UsersReadUsersErrors, UsersReadUsersResponses, UsersUpdatePasswordMeData, UsersUpdatePasswordMeErrors, UsersUpdatePasswordMeResponses, UsersUpdateUserData, UsersUpdateUserErrors, UsersUpdateUserMeData, UsersUpdateUserMeErrors, UsersUpdateUserMeResponses, UsersUpdateUserPostsData, UsersUpdateUserPostsErrors, UsersUpdateUserPostsResponses, UsersUpdateUserResponses, UsersUpdateUserRolesData, UsersUpdateUserRolesErrors, UsersUpdateUserRolesResponses, UtilsHealthCheckData, UtilsHealthCheckResponses, UtilsTestEmailData, UtilsTestEmailErrors, UtilsTestEmailResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -73,6 +73,15 @@ export const loginResetPassword = <ThrowOnError extends boolean = false>(options
 export const loginRecoverPasswordHtmlContent = <ThrowOnError extends boolean = false>(options: Options<LoginRecoverPasswordHtmlContentData, ThrowOnError>): RequestResult<LoginRecoverPasswordHtmlContentResponses, LoginRecoverPasswordHtmlContentErrors, ThrowOnError> => (options.client ?? client).post<LoginRecoverPasswordHtmlContentResponses, LoginRecoverPasswordHtmlContentErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/password-recovery-html-content/{email}',
+    ...options
+});
+
+/**
+ * Read Dashboard Analytics
+ */
+export const dashboardReadDashboardAnalytics = <ThrowOnError extends boolean = false>(options?: Options<DashboardReadDashboardAnalyticsData, ThrowOnError>): RequestResult<DashboardReadDashboardAnalyticsResponses, unknown, ThrowOnError> => (options?.client ?? client).get<DashboardReadDashboardAnalyticsResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/dashboard/analytics',
     ...options
 });
 
@@ -153,6 +162,29 @@ export const usersExportUsers = <ThrowOnError extends boolean = false>(options?:
 });
 
 /**
+ * Download User Import Template
+ */
+export const usersDownloadUserImportTemplate = <ThrowOnError extends boolean = false>(options?: Options<UsersDownloadUserImportTemplateData, ThrowOnError>): RequestResult<UsersDownloadUserImportTemplateResponses, unknown, ThrowOnError> => (options?.client ?? client).get<UsersDownloadUserImportTemplateResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/users/import-template',
+    ...options
+});
+
+/**
+ * Import Users
+ */
+export const usersImportUsers = <ThrowOnError extends boolean = false>(options: Options<UsersImportUsersData, ThrowOnError>): RequestResult<UsersImportUsersResponses, UsersImportUsersErrors, ThrowOnError> => (options.client ?? client).post<UsersImportUsersResponses, UsersImportUsersErrors, ThrowOnError>({
+    ...formDataBodySerializer,
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/users/import',
+    ...options,
+    headers: {
+        'Content-Type': null,
+        ...options.headers
+    }
+});
+
+/**
  * Delete User
  *
  * Delete a user.
@@ -204,6 +236,28 @@ export const usersReadUserRoles = <ThrowOnError extends boolean = false>(options
 export const usersUpdateUserRoles = <ThrowOnError extends boolean = false>(options: Options<UsersUpdateUserRolesData, ThrowOnError>): RequestResult<UsersUpdateUserRolesResponses, UsersUpdateUserRolesErrors, ThrowOnError> => (options.client ?? client).put<UsersUpdateUserRolesResponses, UsersUpdateUserRolesErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/users/{user_id}/roles',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Read User Posts
+ */
+export const usersReadUserPosts = <ThrowOnError extends boolean = false>(options: Options<UsersReadUserPostsData, ThrowOnError>): RequestResult<UsersReadUserPostsResponses, UsersReadUserPostsErrors, ThrowOnError> => (options.client ?? client).get<UsersReadUserPostsResponses, UsersReadUserPostsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/users/{user_id}/posts',
+    ...options
+});
+
+/**
+ * Update User Posts
+ */
+export const usersUpdateUserPosts = <ThrowOnError extends boolean = false>(options: Options<UsersUpdateUserPostsData, ThrowOnError>): RequestResult<UsersUpdateUserPostsResponses, UsersUpdateUserPostsErrors, ThrowOnError> => (options.client ?? client).put<UsersUpdateUserPostsResponses, UsersUpdateUserPostsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/users/{user_id}/posts',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -558,6 +612,24 @@ export const noticesReadMyMessages = <ThrowOnError extends boolean = false>(opti
 });
 
 /**
+ * Read My Unread Message Count
+ */
+export const noticesReadMyUnreadMessageCount = <ThrowOnError extends boolean = false>(options?: Options<NoticesReadMyUnreadMessageCountData, ThrowOnError>): RequestResult<NoticesReadMyUnreadMessageCountResponses, unknown, ThrowOnError> => (options?.client ?? client).get<NoticesReadMyUnreadMessageCountResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/messages/me/unread-count',
+    ...options
+});
+
+/**
+ * Mark All Messages Read
+ */
+export const noticesMarkAllMessagesRead = <ThrowOnError extends boolean = false>(options?: Options<NoticesMarkAllMessagesReadData, ThrowOnError>): RequestResult<NoticesMarkAllMessagesReadResponses, unknown, ThrowOnError> => (options?.client ?? client).post<NoticesMarkAllMessagesReadResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/messages/me/read-all',
+    ...options
+});
+
+/**
  * Mark Message Read
  */
 export const noticesMarkMessageRead = <ThrowOnError extends boolean = false>(options: Options<NoticesMarkMessageReadData, ThrowOnError>): RequestResult<NoticesMarkMessageReadResponses, NoticesMarkMessageReadErrors, ThrowOnError> => (options.client ?? client).post<NoticesMarkMessageReadResponses, NoticesMarkMessageReadErrors, ThrowOnError>({
@@ -572,6 +644,68 @@ export const noticesMarkMessageRead = <ThrowOnError extends boolean = false>(opt
 export const permissionsReadMyPermissions = <ThrowOnError extends boolean = false>(options?: Options<PermissionsReadMyPermissionsData, ThrowOnError>): RequestResult<PermissionsReadMyPermissionsResponses, unknown, ThrowOnError> => (options?.client ?? client).get<PermissionsReadMyPermissionsResponses, unknown, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/v1/permissions/me',
+    ...options
+});
+
+/**
+ * Read Posts
+ */
+export const postsReadPosts = <ThrowOnError extends boolean = false>(options?: Options<PostsReadPostsData, ThrowOnError>): RequestResult<PostsReadPostsResponses, PostsReadPostsErrors, ThrowOnError> => (options?.client ?? client).get<PostsReadPostsResponses, PostsReadPostsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/posts',
+    ...options
+});
+
+/**
+ * Create Post
+ */
+export const postsCreatePost = <ThrowOnError extends boolean = false>(options: Options<PostsCreatePostData, ThrowOnError>): RequestResult<PostsCreatePostResponses, PostsCreatePostErrors, ThrowOnError> => (options.client ?? client).post<PostsCreatePostResponses, PostsCreatePostErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/posts',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Delete Post
+ */
+export const postsDeletePost = <ThrowOnError extends boolean = false>(options: Options<PostsDeletePostData, ThrowOnError>): RequestResult<PostsDeletePostResponses, PostsDeletePostErrors, ThrowOnError> => (options.client ?? client).delete<PostsDeletePostResponses, PostsDeletePostErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/posts/{post_id}',
+    ...options
+});
+
+/**
+ * Update Post
+ */
+export const postsUpdatePost = <ThrowOnError extends boolean = false>(options: Options<PostsUpdatePostData, ThrowOnError>): RequestResult<PostsUpdatePostResponses, PostsUpdatePostErrors, ThrowOnError> => (options.client ?? client).patch<PostsUpdatePostResponses, PostsUpdatePostErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/posts/{post_id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Read User Sessions
+ */
+export const sessionsReadUserSessions = <ThrowOnError extends boolean = false>(options?: Options<SessionsReadUserSessionsData, ThrowOnError>): RequestResult<SessionsReadUserSessionsResponses, SessionsReadUserSessionsErrors, ThrowOnError> => (options?.client ?? client).get<SessionsReadUserSessionsResponses, SessionsReadUserSessionsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/sessions',
+    ...options
+});
+
+/**
+ * Revoke User Session
+ */
+export const sessionsRevokeUserSession = <ThrowOnError extends boolean = false>(options: Options<SessionsRevokeUserSessionData, ThrowOnError>): RequestResult<SessionsRevokeUserSessionResponses, SessionsRevokeUserSessionErrors, ThrowOnError> => (options.client ?? client).post<SessionsRevokeUserSessionResponses, SessionsRevokeUserSessionErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/sessions/{session_id}/revoke',
     ...options
 });
 

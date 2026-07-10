@@ -173,7 +173,12 @@ export function useColumns(
           onClick: onActionClick,
         },
         name: 'CellOperation',
-        options: ['edit'],
+        options: [
+          {
+            auth: 'system:setting:update',
+            code: 'edit',
+          },
+        ],
       },
       field: 'operation',
       fixed: 'right',

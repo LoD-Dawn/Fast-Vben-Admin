@@ -11,6 +11,7 @@ from app.models import (
     User,
     UserCreate,
     UserRole,
+    UserSession,
     UserUpdate,
     get_datetime_utc,
 )
@@ -39,10 +40,25 @@ def update_user(*, session: Session, db_user: User, user_in: UserUpdate) -> Any:
         extra_data["hashed_password"] = hashed_password
     extra_data["updated_at"] = get_datetime_utc()
     db_user.sqlmodel_update(user_data, update=extra_data)
+    if "password" in user_data:
+        revoke_user_sessions(session=session, user_id=db_user.id)
     session.add(db_user)
     session.commit()
     session.refresh(db_user)
     return db_user
+
+
+def revoke_user_sessions(*, session: Session, user_id: uuid.UUID) -> None:
+    revoked_at = get_datetime_utc()
+    user_sessions = session.exec(
+        select(UserSession).where(
+            UserSession.user_id == user_id,
+            UserSession.revoked_at.is_(None),
+        )
+    ).all()
+    for user_session in user_sessions:
+        user_session.revoked_at = revoked_at
+        session.add(user_session)
 
 
 def get_user_by_email(*, session: Session, email: str) -> User | None:

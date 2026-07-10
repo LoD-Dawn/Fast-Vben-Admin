@@ -109,7 +109,7 @@ function onUpload() {
     <UploadModal @success="onRefresh" />
     <Grid table-title="文件列表">
       <template #toolbar-tools>
-        <Button type="primary" @click="onUpload">
+        <Button v-access:code="'system:file:upload'" type="primary" @click="onUpload">
           <Plus class="size-5" />
           上传文件
         </Button>

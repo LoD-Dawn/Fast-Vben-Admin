@@ -98,7 +98,12 @@ setupVbenVxeTable({
 
     vxeUI.renderer.add('CellSwitch', {
       renderTableDefault({ attrs, props }, { column, row }) {
+        const { hasAccessByCodes } = useAccess();
         const loadingKey = `__loading_${column.field}`;
+        const auth = attrs?.auth;
+        const hasPermission = auth
+          ? hasAccessByCodes(Array.isArray(auth) ? auth : [auth])
+          : true;
         const finallyProps = {
           checkedChildren: '启用',
           checkedValue: true,
@@ -106,10 +111,12 @@ setupVbenVxeTable({
           unCheckedValue: false,
           ...props,
           checked: row[column.field],
+          disabled: props?.disabled || !hasPermission,
           loading: row[loadingKey] ?? false,
           'onUpdate:checked': onChange,
         };
         async function onChange(newVal: boolean) {
+          if (!hasPermission) return;
           row[loadingKey] = true;
           try {
             const result = await attrs?.beforeChange?.(newVal, row);
@@ -126,6 +133,7 @@ setupVbenVxeTable({
 
     vxeUI.renderer.add('CellOperation', {
       renderTableDefault({ attrs, options, props }, { column, row }) {
+        const { hasAccessByCodes } = useAccess();
         const defaultProps = { size: 'small', type: 'link', ...props };
         let align: string;
         switch (column.align) {
@@ -176,7 +184,12 @@ setupVbenVxeTable({
             });
             return optBtn;
           })
-          .filter((opt) => opt.show !== false);
+          .filter((opt) => {
+            if (opt.show === false) return false;
+            if (!opt.auth) return true;
+            const authCodes = Array.isArray(opt.auth) ? opt.auth : [opt.auth];
+            return hasAccessByCodes(authCodes);
+          });
 
         function renderBtn(opt: Recordable<any>, listen = true) {
           return h(

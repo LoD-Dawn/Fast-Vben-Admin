@@ -118,7 +118,7 @@ export function useColumns(
     },
     {
       cellRender: {
-        attrs: { beforeChange: onStatusChange },
+        attrs: { auth: 'system:role:update', beforeChange: onStatusChange },
         name: onStatusChange ? 'CellSwitch' : 'CellTag',
       },
       field: 'is_active',
@@ -147,11 +147,16 @@ export function useColumns(
         name: 'CellOperation',
         options: [
           {
+            auth: 'system:role:update',
             code: 'permission',
             text: $t('system.role.permissions'),
           },
-          'edit',
           {
+            auth: 'system:role:update',
+            code: 'edit',
+          },
+          {
+            auth: 'system:role:delete',
             code: 'delete',
             disabled: (row: RoleRecord) => !!row.is_system,
           },

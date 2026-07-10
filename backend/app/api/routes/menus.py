@@ -4,19 +4,41 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlmodel import col, delete, func, select
 
-from app.api.deps import CurrentUser, SessionDep, require_permission
+from app.api.deps import (
+    CurrentUser,
+    SessionDep,
+    normalize_pagination,
+    require_permission,
+)
 from app.models import (
     Menu,
     MenuCreate,
     MenuPublic,
     MenusPublic,
     MenuUpdate,
+    Role,
     RoleMenu,
     UserRole,
     get_datetime_utc,
 )
 
 router = APIRouter(prefix="/menus", tags=["menus"])
+
+
+def is_descendant_menu(
+    *, session: SessionDep, menu_id: uuid.UUID, possible_descendant_id: uuid.UUID
+) -> bool:
+    current_id: uuid.UUID | None = possible_descendant_id
+    visited: set[uuid.UUID] = set()
+    while current_id:
+        if current_id == menu_id:
+            return True
+        if current_id in visited:
+            return True
+        visited.add(current_id)
+        current = session.get(Menu, current_id)
+        current_id = current.parent_id if current else None
+    return False
 
 
 @router.get(
@@ -30,6 +52,9 @@ def read_menus(
     page_size: int = 200,
     keyword: str | None = None,
 ) -> Any:
+    page, page_size = normalize_pagination(
+        page=page, page_size=page_size, max_page_size=500
+    )
     filters = []
     if keyword:
         pattern = f"%{keyword}%"
@@ -73,11 +98,13 @@ def read_my_menus(session: SessionDep, current_user: CurrentUser) -> Any:
         menus = session.exec(
             select(Menu)
             .join(RoleMenu, RoleMenu.menu_id == Menu.id)
+            .join(Role, Role.id == RoleMenu.role_id)
             .join(UserRole, UserRole.role_id == RoleMenu.role_id)
             .where(
                 UserRole.user_id == current_user.id,
                 Menu.is_active,
                 Menu.is_visible,
+                Role.is_active,
             )
             .order_by(col(Menu.sort), col(Menu.created_at))
         ).all()
@@ -96,11 +123,13 @@ def read_my_permissions(session: SessionDep, current_user: CurrentUser) -> Any:
         permissions = session.exec(
             select(Menu.permission_code)
             .join(RoleMenu, RoleMenu.menu_id == Menu.id)
+            .join(Role, Role.id == RoleMenu.role_id)
             .join(UserRole, UserRole.role_id == RoleMenu.role_id)
             .where(
                 UserRole.user_id == current_user.id,
                 Menu.permission_code.is_not(None),
                 Menu.is_active,
+                Role.is_active,
             )
         ).all()
     return sorted({permission for permission in permissions if permission})
@@ -143,6 +172,12 @@ def update_menu(
         raise HTTPException(status_code=400, detail="Menu cannot be its own parent")
     if menu_in.parent_id and not session.get(Menu, menu_in.parent_id):
         raise HTTPException(status_code=400, detail="Parent menu does not exist")
+    if menu_in.parent_id and is_descendant_menu(
+        session=session,
+        menu_id=menu_id,
+        possible_descendant_id=menu_in.parent_id,
+    ):
+        raise HTTPException(status_code=400, detail="Menu parent cannot be a child")
     if menu_in.permission_code and menu_in.permission_code != menu.permission_code:
         existing_menu = session.exec(
             select(Menu).where(Menu.permission_code == menu_in.permission_code)

@@ -129,6 +129,64 @@ class DepartmentsPublic(SQLModel):
     page_size: int
 
 
+class PostBase(SQLModel):
+    name: str = Field(min_length=1, max_length=100)
+    code: str = Field(min_length=1, max_length=100, unique=True, index=True)
+    sort: int = 0
+    is_active: bool = True
+    remark: str | None = Field(default=None, max_length=255)
+
+
+class PostCreate(PostBase):
+    pass
+
+
+class PostUpdate(SQLModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    code: str | None = Field(default=None, min_length=1, max_length=100)
+    sort: int | None = None
+    is_active: bool | None = None
+    remark: str | None = Field(default=None, max_length=255)
+
+
+class Post(PostBase, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    updated_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class PostPublic(PostBase):
+    id: uuid.UUID
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class PostsPublic(SQLModel):
+    items: list[PostPublic]
+    total: int
+    page: int
+    page_size: int
+
+
+class UserPost(SQLModel, table=True):
+    user_id: uuid.UUID = Field(
+        foreign_key="user.id", primary_key=True, ondelete="CASCADE"
+    )
+    post_id: uuid.UUID = Field(
+        foreign_key="post.id", primary_key=True, ondelete="CASCADE"
+    )
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
 class UserRole(SQLModel, table=True):
     user_id: uuid.UUID = Field(
         foreign_key="user.id", primary_key=True, ondelete="CASCADE"
@@ -208,6 +266,10 @@ class RoleMenuUpdate(SQLModel):
 
 class UserRoleUpdate(SQLModel):
     role_ids: list[uuid.UUID]
+
+
+class UserPostUpdate(SQLModel):
+    post_ids: list[uuid.UUID]
 
 
 class MenuBase(SQLModel):
@@ -435,6 +497,45 @@ class LoginLogPublic(LoginLogBase):
 
 class LoginLogsPublic(SQLModel):
     items: list[LoginLogPublic]
+    total: int
+    page: int
+    page_size: int
+
+
+class UserSession(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(
+        foreign_key="user.id", index=True, nullable=False, ondelete="CASCADE"
+    )
+    token_jti: str = Field(max_length=64, unique=True, index=True)
+    ip: str | None = Field(default=None, max_length=100)
+    user_agent: str | None = Field(default=None, max_length=500)
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    last_active_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    expires_at: datetime = Field(sa_type=DateTime(timezone=True))  # type: ignore
+    revoked_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))  # type: ignore
+
+
+class UserSessionPublic(SQLModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    email: str
+    full_name: str | None = None
+    ip: str | None = None
+    user_agent: str | None = None
+    created_at: datetime | None = None
+    last_active_at: datetime | None = None
+    expires_at: datetime
+
+
+class UserSessionsPublic(SQLModel):
+    items: list[UserSessionPublic]
     total: int
     page: int
     page_size: int
@@ -698,6 +799,7 @@ class Token(SQLModel):
 # Contents of JWT token
 class TokenPayload(SQLModel):
     sub: str | None = None
+    jti: str | None = None
 
 
 class NewPassword(SQLModel):

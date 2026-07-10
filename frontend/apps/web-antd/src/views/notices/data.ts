@@ -116,22 +116,30 @@ export function useColumns(
           nameTitle: '公告',
           onClick: onActionClick,
         },
-        name: 'CellOperation',
-        options: [
-          'edit',
-          {
-            code: 'publish',
-            show: (row: NoticeRecord) => row.status !== 'published',
-            text: '发布',
-          },
-          {
-            code: 'withdraw',
-            show: (row: NoticeRecord) => row.status === 'published',
-            text: '撤回',
-          },
-          'delete',
-        ],
-      },
+        name: 'CellOperation',
+        options: [
+          {
+            auth: 'system:notice:update',
+            code: 'edit',
+          },
+          {
+            auth: 'system:notice:update',
+            code: 'publish',
+            show: (row: NoticeRecord) => row.status !== 'published',
+            text: '发布',
+          },
+          {
+            auth: 'system:notice:update',
+            code: 'withdraw',
+            show: (row: NoticeRecord) => row.status === 'published',
+            text: '撤回',
+          },
+          {
+            auth: 'system:notice:delete',
+            code: 'delete',
+          },
+        ],
+      },
       field: 'operation',
       fixed: 'right',
       title: '操作',

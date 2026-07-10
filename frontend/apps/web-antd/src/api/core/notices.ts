@@ -65,6 +65,14 @@ export function listMyMessagesApi(params: MessageListParams = {}) {
   return requestClient.get<UserMessageListResult>('/messages/me', { params });
 }
 
+export function getUnreadMessageCountApi() {
+  return requestClient.get<{ count: number }>('/messages/me/unread-count');
+}
+
 export function markMessageReadApi(messageId: string) {
   return requestClient.post<UserMessageRecord>(`/messages/${messageId}/read`);
+}
+
+export function markAllMessagesReadApi() {
+  return requestClient.post<{ message: string }>('/messages/me/read-all');
 }

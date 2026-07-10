@@ -121,7 +121,7 @@ function onCreate() {
     <FormModal @success="onRefresh" />
     <Grid table-title="部门列表">
       <template #toolbar-tools>
-        <Button type="primary" @click="onCreate">
+        <Button v-access:code="'system:department:create'" type="primary" @click="onCreate">
           <Plus class="size-5" />
           新增部门
         </Button>

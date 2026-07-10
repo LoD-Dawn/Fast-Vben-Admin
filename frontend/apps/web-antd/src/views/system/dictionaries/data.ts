@@ -130,7 +130,7 @@ export function useItemColumns(
     },
     {
       cellRender: {
-        attrs: { beforeChange: onStatusChange },
+        attrs: { auth: 'system:dict:update', beforeChange: onStatusChange },
         name: onStatusChange ? 'CellSwitch' : 'CellTag',
       },
       field: 'is_active',
@@ -146,7 +146,16 @@ export function useItemColumns(
           onClick: onActionClick,
         },
         name: 'CellOperation',
-        options: ['edit', 'delete'],
+        options: [
+          {
+            auth: 'system:dict:update',
+            code: 'edit',
+          },
+          {
+            auth: 'system:dict:delete',
+            code: 'delete',
+          },
+        ],
       },
       field: 'operation',
       fixed: 'right',

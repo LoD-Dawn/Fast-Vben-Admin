@@ -7,11 +7,16 @@ import type {
   MenuPublic,
   MenusPublic,
   MenuUpdate,
+  PostCreate,
+  PostPublic,
+  PostsPublic,
+  PostUpdate,
   RoleCreate,
   RoleMenuUpdate,
   RolePublic,
   RolesPublic,
   RoleUpdate,
+  UserPostUpdate,
   UserRoleUpdate,
 } from '#/api/generated';
 
@@ -32,7 +37,13 @@ export type DepartmentListResult = DepartmentsPublic;
 export type DepartmentCreatePayload = DepartmentCreate;
 export type DepartmentUpdatePayload = DepartmentUpdate;
 
+export type PostRecord = PostPublic;
+export type PostListResult = PostsPublic;
+export type PostCreatePayload = PostCreate;
+export type PostUpdatePayload = PostUpdate;
+
 export interface ListParams {
+  is_active?: boolean;
   keyword?: string;
   page?: number;
   page_size?: number;
@@ -120,12 +131,42 @@ export function deleteDepartmentApi(departmentId: string) {
   return requestClient.delete<void>(`/departments/${departmentId}`);
 }
 
+export function listPostsApi(params: ListParams = {}) {
+  return requestClient.get<PostListResult>('/posts', { params });
+}
+
+export function createPostApi(data: PostCreatePayload) {
+  return requestClient.post<PostRecord>('/posts', data);
+}
+
+export function updatePostApi(postId: string, data: PostUpdatePayload) {
+  return requestClient.request<PostRecord>(`/posts/${postId}`, {
+    data,
+    method: 'PATCH',
+  });
+}
+
+export function deletePostApi(postId: string) {
+  return requestClient.delete<void>(`/posts/${postId}`);
+}
+
 export function getUserRolesApi(userId: string) {
   return requestClient.get<RoleRecord[]>(`/users/${userId}/roles`);
 }
 
 export function updateUserRolesApi(userId: string, data: UserRoleUpdate) {
   return requestClient.request<string[]>(`/users/${userId}/roles`, {
+    data,
+    method: 'PUT',
+  });
+}
+
+export function getUserPostsApi(userId: string) {
+  return requestClient.get<PostRecord[]>(`/users/${userId}/posts`);
+}
+
+export function updateUserPostsApi(userId: string, data: UserPostUpdate) {
+  return requestClient.request<string[]>(`/users/${userId}/posts`, {
     data,
     method: 'PUT',
   });

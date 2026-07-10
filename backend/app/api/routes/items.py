@@ -7,7 +7,12 @@ from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFil
 from fastapi.responses import StreamingResponse
 from sqlmodel import col, func, select
 
-from app.api.deps import CurrentUser, SessionDep, require_permission
+from app.api.deps import (
+    CurrentUser,
+    SessionDep,
+    normalize_pagination,
+    require_permission,
+)
 from app.models import (
     Item,
     ItemCreate,
@@ -46,6 +51,7 @@ def read_items(
     """
     Retrieve items.
     """
+    page, page_size = normalize_pagination(page=page, page_size=page_size)
 
     offset = (page - 1) * page_size
     filters = []

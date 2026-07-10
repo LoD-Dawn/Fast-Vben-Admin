@@ -1,9 +1,10 @@
+import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import col, func, select
 
-from app.api.deps import SessionDep, require_permission
+from app.api.deps import SessionDep, normalize_pagination, require_permission
 from app.models import (
     SystemSetting,
     SystemSettingPublic,
@@ -27,6 +28,7 @@ def read_settings(
     page_size: int = 50,
     keyword: str | None = None,
 ) -> Any:
+    page, page_size = normalize_pagination(page=page, page_size=page_size)
     filters = []
     if group:
         filters.append(SystemSetting.group == group)
@@ -84,6 +86,13 @@ def update_setting(
     update_data = setting_in.model_dump(exclude_unset=True)
     if setting.is_system:
         update_data.pop("is_system", None)
+    next_value_type = update_data.get("value_type", setting.value_type)
+    next_value = update_data.get("value", setting.value)
+    if next_value_type == "json":
+        try:
+            json.loads(next_value)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Setting value must be JSON")
     setting.sqlmodel_update(update_data)
     setting.updated_at = get_datetime_utc()
     session.add(setting)

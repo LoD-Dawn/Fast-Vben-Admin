@@ -5,7 +5,12 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from sqlmodel import col, func, or_, select
 
-from app.api.deps import CurrentUser, SessionDep, require_permission
+from app.api.deps import (
+    CurrentUser,
+    SessionDep,
+    normalize_pagination,
+    require_permission,
+)
 from app.models import (
     FileAsset,
     FileAssetPublic,
@@ -29,6 +34,7 @@ def read_files(
     page_size: int = 20,
     keyword: str | None = None,
 ) -> Any:
+    page, page_size = normalize_pagination(page=page, page_size=page_size)
     filters = []
     if keyword:
         pattern = f"%{keyword}%"
@@ -62,7 +68,11 @@ def read_files(
     )
 
 
-@router.post("/upload", response_model=FileAssetPublic)
+@router.post(
+    "/upload",
+    dependencies=[Depends(require_permission("system:file:upload"))],
+    response_model=FileAssetPublic,
+)
 def upload_file(
     session: SessionDep,
     current_user: CurrentUser,

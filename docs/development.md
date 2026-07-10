@@ -19,6 +19,7 @@ $env:POSTGRES_USER='postgres'
 $env:POSTGRES_PASSWORD='changethis'
 cd backend
 uv run alembic upgrade head
+uv run python app/initial_data.py
 uv run fastapi dev app/main.py
 ```
 
@@ -39,15 +40,37 @@ pnpm -F @vben/web-antd run typecheck
 pnpm -F @vben/web-antd run build
 ```
 
+端到端测试需要先启动后端，并让前端指向同一个 API。若本机 `8000` 已被占用，可把后端启动在其他端口：
+
+```powershell
+cd backend
+$env:POSTGRES_SERVER='localhost'
+$env:POSTGRES_PORT='5432'
+$env:POSTGRES_DB='app'
+$env:POSTGRES_USER='postgres'
+$env:POSTGRES_PASSWORD='changethis'
+$env:BACKEND_CORS_ORIGINS='http://localhost:5173,http://127.0.0.1:5174,http://localhost:5174'
+$env:FRONTEND_HOST='http://127.0.0.1:5174'
+uv run uvicorn app.main:app --host 127.0.0.1 --port 8002
+
+cd ..
+$env:VITE_GLOB_API_URL='http://127.0.0.1:8002/api/v1'
+$env:E2E_API_URL='http://127.0.0.1:8002/api/v1'
+$env:E2E_BASE_URL='http://127.0.0.1:5174'
+pnpm frontend:e2e
+```
+
 ## API 类型生成
 
-后端启动在 `http://localhost:8000` 后执行：
+推荐从仓库根目录执行：
 
 ```powershell
 pnpm generate:api
 ```
 
-也可以用本地 OpenAPI 文件：
+该命令会从当前 `backend/app/main.py` 直接导出临时 OpenAPI schema，再调用前端生成器，不依赖 `localhost:8000` 上已有服务。
+
+也可以指定外部 OpenAPI 地址或本地 OpenAPI 文件：
 
 ```powershell
 $env:OPENAPI_INPUT='../openapi.local.json'

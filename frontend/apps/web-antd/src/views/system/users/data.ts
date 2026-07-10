@@ -3,7 +3,7 @@ import type { OnActionClickFn, VxeTableGridColumns } from '#/adapter/vxe-table';
 import type { UserRecord } from '#/api';
 
 import { z } from '#/adapter/form';
-import { listDepartmentsApi, listRolesApi } from '#/api';
+import { listDepartmentsApi, listPostsApi, listRolesApi } from '#/api';
 import { $t } from '#/locales';
 
 export function useFormSchema(isEdit = false): VbenFormSchema[] {
@@ -48,6 +48,25 @@ export function useFormSchema(isEdit = false): VbenFormSchema[] {
       },
       fieldName: 'role_ids',
       label: $t('system.user.roles'),
+    },
+    {
+      component: 'ApiSelect',
+      componentProps: {
+        api: async () => {
+          const result = await listPostsApi({
+            is_active: true,
+            page: 1,
+            page_size: 200,
+          });
+          return result.items;
+        },
+        class: 'w-full',
+        labelField: 'name',
+        mode: 'multiple',
+        valueField: 'id',
+      },
+      fieldName: 'post_ids',
+      label: $t('system.user.posts'),
     },
     {
       component: 'InputPassword',
@@ -123,7 +142,7 @@ export function useColumns(
     },
     {
       cellRender: {
-        attrs: { beforeChange: onStatusChange },
+        attrs: { auth: 'system:user:update', beforeChange: onStatusChange },
         name: onStatusChange ? 'CellSwitch' : 'CellTag',
       },
       field: 'is_active',
@@ -149,7 +168,16 @@ export function useColumns(
           onClick: onActionClick,
         },
         name: 'CellOperation',
-        options: ['edit', 'delete'],
+        options: [
+          {
+            auth: 'system:user:update',
+            code: 'edit',
+          },
+          {
+            auth: 'system:user:delete',
+            code: 'delete',
+          },
+        ],
       },
       field: 'operation',
       fixed: 'right',

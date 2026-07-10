@@ -4,7 +4,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlmodel import col, func, select
 
-from app.api.deps import SessionDep, require_permission
+from app.api.deps import SessionDep, normalize_pagination, require_permission
 from app.models import (
     DictionaryItem,
     DictionaryItemCreate,
@@ -33,6 +33,7 @@ def read_dictionary_types(
     page_size: int = 20,
     keyword: str | None = None,
 ) -> Any:
+    page, page_size = normalize_pagination(page=page, page_size=page_size)
     filters = []
     if keyword:
         pattern = f"%{keyword}%"
@@ -145,6 +146,9 @@ def read_dictionary_items(
     page_size: int = 200,
     keyword: str | None = None,
 ) -> Any:
+    page, page_size = normalize_pagination(
+        page=page, page_size=page_size, max_page_size=500
+    )
     filters = []
     if type_id:
         filters.append(DictionaryItem.type_id == type_id)
@@ -209,6 +213,16 @@ def create_dictionary_item(
 ) -> Any:
     if not session.get(DictionaryType, item_in.type_id):
         raise HTTPException(status_code=400, detail="Dictionary type does not exist")
+    existing_item = session.exec(
+        select(DictionaryItem).where(
+            DictionaryItem.type_id == item_in.type_id,
+            DictionaryItem.value == item_in.value,
+        )
+    ).first()
+    if existing_item:
+        raise HTTPException(
+            status_code=409, detail="Dictionary item value already exists"
+        )
 
     item = DictionaryItem.model_validate(item_in)
     session.add(item)
@@ -230,6 +244,19 @@ def update_dictionary_item(
         raise HTTPException(status_code=404, detail="Dictionary item not found")
     if item_in.type_id and not session.get(DictionaryType, item_in.type_id):
         raise HTTPException(status_code=400, detail="Dictionary type does not exist")
+    next_type_id = item_in.type_id or item.type_id
+    next_value = item_in.value or item.value
+    existing_item = session.exec(
+        select(DictionaryItem).where(
+            DictionaryItem.type_id == next_type_id,
+            DictionaryItem.value == next_value,
+            DictionaryItem.id != item.id,
+        )
+    ).first()
+    if existing_item:
+        raise HTTPException(
+            status_code=409, detail="Dictionary item value already exists"
+        )
 
     item.sqlmodel_update(item_in.model_dump(exclude_unset=True))
     item.updated_at = get_datetime_utc()

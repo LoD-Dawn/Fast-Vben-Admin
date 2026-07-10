@@ -4,7 +4,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlmodel import col, delete, func, select
 
-from app.api.deps import SessionDep, require_permission
+from app.api.deps import SessionDep, normalize_pagination, require_permission
 from app.models import (
     Menu,
     Role,
@@ -32,6 +32,7 @@ def read_roles(
     page_size: int = 20,
     keyword: str | None = None,
 ) -> Any:
+    page, page_size = normalize_pagination(page=page, page_size=page_size)
     filters = []
     if keyword:
         pattern = f"%{keyword}%"
@@ -101,6 +102,8 @@ def update_role(
         raise HTTPException(status_code=404, detail="Role not found")
     if role.is_system and role_in.is_system is False:
         raise HTTPException(status_code=400, detail="System role cannot be unmarked")
+    if role.is_system and role_in.code and role_in.code != role.code:
+        raise HTTPException(status_code=400, detail="System role code cannot be changed")
     if role_in.code and role_in.code != role.code:
         existing_role = session.exec(select(Role).where(Role.code == role_in.code)).first()
         if existing_role:

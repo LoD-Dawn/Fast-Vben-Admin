@@ -5,6 +5,8 @@
   "systemRoles": "角色管理",
   "systemMenus": "菜单管理",
   "systemDepartments": "部门管理",
+  "systemPosts": "岗位管理",
+  "systemOnlineUsers": "在线用户",
   "systemDictionaries": "字典管理",
   "systemSettings": "参数配置",
   "logs": "日志审计",
