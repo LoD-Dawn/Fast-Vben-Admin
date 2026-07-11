@@ -97,6 +97,16 @@ class Settings(BaseSettings):
     UPLOAD_ALLOWED_EXTENSIONS: str = (
         "jpg,jpeg,png,gif,webp,pdf,doc,docx,xls,xlsx,csv,txt,zip"
     )
+    STORAGE_PROVIDER: Literal["local", "s3"] = "local"
+    S3_ENDPOINT_URL: str | None = None
+    S3_REGION: str = "us-east-1"
+    S3_BUCKET: str | None = None
+    S3_ACCESS_KEY_ID: str | None = None
+    S3_SECRET_ACCESS_KEY: str | None = None
+    S3_OBJECT_PREFIX: str = "uploads"
+    S3_ADDRESSING_STYLE: Literal["auto", "path", "virtual"] = "auto"
+    S3_AUTO_CREATE_BUCKET: bool = False
+    S3_PRESIGNED_URL_EXPIRE_SECONDS: int = 300
 
     def _check_default_secret(self, var_name: str, value: str | None) -> None:
         if value == "changethis":

@@ -8,13 +8,18 @@ from app.api.routes import (
     items,
     login,
     logs,
+    mail,
     menus,
     notices,
+    oauth2,
     permissions,
     posts,
     private,
     roles,
     sessions,
+    site_messages,
+    sms,
+    social,
     users,
     utils,
 )
@@ -38,6 +43,11 @@ api_router.include_router(departments.router)
 api_router.include_router(dictionaries.router)
 api_router.include_router(system_settings.router)
 api_router.include_router(files.router)
+api_router.include_router(sms.router)
+api_router.include_router(mail.router)
+api_router.include_router(site_messages.router)
+api_router.include_router(oauth2.router)
+api_router.include_router(social.router)
 
 
 if settings.ENVIRONMENT == "local":

@@ -25,6 +25,10 @@ from app.models import (
 reusable_oauth2 = OAuth2PasswordBearer(
     tokenUrl=f"{settings.API_V1_STR}/login/access-token"
 )
+optional_oauth2 = OAuth2PasswordBearer(
+    tokenUrl=f"{settings.API_V1_STR}/login/access-token",
+    auto_error=False,
+)
 
 
 def get_db() -> Generator[Session]:
@@ -34,6 +38,7 @@ def get_db() -> Generator[Session]:
 
 SessionDep = Annotated[Session, Depends(get_db)]
 TokenDep = Annotated[str, Depends(reusable_oauth2)]
+OptionalTokenDep = Annotated[str | None, Depends(optional_oauth2)]
 
 
 def get_token_payload(token: TokenDep) -> TokenPayload:
@@ -55,6 +60,10 @@ CurrentTokenPayload = Annotated[TokenPayload, Depends(get_token_payload)]
 def get_current_user(
     session: SessionDep, token_data: CurrentTokenPayload
 ) -> User:
+    return get_user_from_token_payload(session=session, token_data=token_data)
+
+
+def get_user_from_token_payload(*, session: Session, token_data: TokenPayload) -> User:
     if not token_data.sub or not token_data.jti:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -88,6 +97,28 @@ def get_current_user(
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+def get_optional_current_user(
+    session: SessionDep, token: OptionalTokenDep
+) -> User | None:
+    if not token:
+        return None
+    try:
+        token_data = TokenPayload(
+            **jwt.decode(
+                token, settings.SECRET_KEY, algorithms=[security.ALGORITHM]
+            )
+        )
+    except (InvalidTokenError, ValidationError):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Could not validate credentials",
+        )
+    return get_user_from_token_payload(session=session, token_data=token_data)
+
+
+OptionalCurrentUser = Annotated[User | None, Depends(get_optional_current_user)]
 
 
 def normalize_pagination(

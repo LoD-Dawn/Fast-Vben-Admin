@@ -20,6 +20,30 @@ export function useGridFormSchema(): VbenFormSchema[] {
       fieldName: 'keyword',
       label: $t('files.keyword'),
     },
+    {
+      component: 'Select',
+      componentProps: {
+        allowClear: true,
+        options: [
+          { label: 'local', value: 'local' },
+          { label: 's3', value: 's3' },
+        ],
+      },
+      fieldName: 'storage_provider',
+      label: '存储类型',
+    },
+    {
+      component: 'Select',
+      componentProps: {
+        allowClear: true,
+        options: [
+          { label: $t('system.common.yes'), value: true },
+          { label: $t('system.common.no'), value: false },
+        ],
+      },
+      fieldName: 'is_public',
+      label: $t('files.public'),
+    },
   ];
 }
 
@@ -53,7 +77,10 @@ export function useColumns(
     {
       cellRender: {
         name: 'CellTag',
-        options: [{ color: 'processing', label: 'local', value: 'local' }],
+        options: [
+          { color: 'default', label: 'local', value: 'local' },
+          { color: 'processing', label: 's3', value: 's3' },
+        ],
       },
       field: 'storage_provider',
       title: $t('files.storage'),

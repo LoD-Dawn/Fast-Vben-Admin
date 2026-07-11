@@ -6,14 +6,21 @@ from app.models import (
     Department,
     DictionaryItem,
     DictionaryType,
+    FileStorageChannel,
+    MailAccount,
+    MailTemplate,
     Menu,
     Post,
     Role,
     RoleMenu,
+    SiteMessageTemplate,
+    SmsChannel,
+    SmsTemplate,
     SystemSetting,
     User,
     UserCreate,
     UserRole,
+    get_datetime_utc,
 )
 
 engine = create_engine(str(settings.SQLALCHEMY_DATABASE_URI))
@@ -86,6 +93,10 @@ def seed_system_data(*, session: Session, superuser: User) -> None:
     seed_dictionaries(session=session)
     seed_posts(session=session)
     seed_settings(session=session)
+    seed_storage_channels(session=session)
+    seed_sms_channels(session=session)
+    seed_mail_accounts(session=session)
+    seed_site_message_templates(session=session)
     menus = seed_menus(session=session)
     bind_role_menus(session=session, role=super_admin, menus=menus)
     bind_role_menus(
@@ -99,6 +110,7 @@ def seed_system_data(*, session: Session, superuser: User) -> None:
                 menu.permission_code.startswith("system:")
                 or menu.permission_code in {"dashboard:view", "personal:message:list"}
             )
+            or menu.type == "directory"
         ],
     )
     bind_role_menus(
@@ -232,6 +244,7 @@ def ensure_menu(
 
 
 def seed_menus(*, session: Session) -> list[Menu]:
+    remove_code_generation_menus(session=session)
     dashboard = ensure_menu(
         session=session,
         title="menu.dashboard",
@@ -348,21 +361,98 @@ def seed_menus(*, session: Session) -> list[Menu]:
         permission_code="system:session:list",
         sort=80,
     )
+    oauth2 = ensure_menu(
+        session=session,
+        title="menu.oauth2",
+        type="directory",
+        parent_id=system.id,
+        route_path="/system/oauth2",
+        route_name="OAuth2",
+        icon="lucide:shield",
+        sort=85,
+    )
+    oauth2_clients = ensure_menu(
+        session=session,
+        title="menu.oauth2Clients",
+        type="menu",
+        parent_id=oauth2.id,
+        route_path="/system/oauth2/clients",
+        route_name="OAuth2Clients",
+        component="#/views/oauth2/clients/index.vue",
+        icon="lucide:hard-drive",
+        permission_code="system:oauth2-client:list",
+        sort=10,
+    )
+    oauth2_tokens = ensure_menu(
+        session=session,
+        title="menu.oauth2Tokens",
+        type="menu",
+        parent_id=oauth2.id,
+        route_path="/system/oauth2/tokens",
+        route_name="OAuth2Tokens",
+        component="#/views/oauth2/tokens/index.vue",
+        icon="lucide:key-round",
+        permission_code="system:oauth2-token:list",
+        sort=20,
+    )
+    social = ensure_menu(
+        session=session,
+        title="menu.socialLogin",
+        type="directory",
+        parent_id=system.id,
+        route_path="/system/social",
+        route_name="SocialLogin",
+        icon="lucide:rocket",
+        sort=86,
+    )
+    social_clients = ensure_menu(
+        session=session,
+        title="menu.socialClients",
+        type="menu",
+        parent_id=social.id,
+        route_path="/system/social/clients",
+        route_name="SocialClients",
+        component="#/views/social/clients/index.vue",
+        icon="lucide:settings-2",
+        permission_code="system:social-client:list",
+        sort=10,
+    )
+    social_users = ensure_menu(
+        session=session,
+        title="menu.socialUsers",
+        type="menu",
+        parent_id=social.id,
+        route_path="/system/social/users",
+        route_name="SocialUsers",
+        component="#/views/social/users/index.vue",
+        icon="lucide:users-round",
+        permission_code="system:social-user:list",
+        sort=20,
+    )
+    migrate_system_directory_menu(
+        session=session,
+        system=system,
+        route_name="Logs",
+        legacy_path="/logs",
+        system_path="/system/logs",
+        sort=90,
+    )
     logs = ensure_menu(
         session=session,
         title="menu.logs",
         type="directory",
-        route_path="/logs",
+        parent_id=system.id,
+        route_path="/system/logs",
         route_name="Logs",
         icon="lucide:clipboard-list",
-        sort=15,
+        sort=90,
     )
     login_logs = ensure_menu(
         session=session,
         title="menu.loginLogs",
         type="menu",
         parent_id=logs.id,
-        route_path="/logs/login",
+        route_path="/system/logs/login",
         route_name="LoginLogs",
         component="#/views/logs/login/index.vue",
         icon="lucide:log-in",
@@ -374,45 +464,234 @@ def seed_menus(*, session: Session) -> list[Menu]:
         title="menu.operationLogs",
         type="menu",
         parent_id=logs.id,
-        route_path="/logs/operation",
+        route_path="/system/logs/operation",
         route_name="OperationLogs",
         component="#/views/logs/operation/index.vue",
         icon="lucide:history",
         permission_code="system:operation-log:list",
         sort=20,
     )
+    migrate_system_directory_menu(
+        session=session,
+        system=system,
+        route_name="Files",
+        legacy_path="/files",
+        system_path="/system/files",
+        sort=100,
+    )
     files = ensure_menu(
         session=session,
         title="menu.files",
-        type="menu",
-        route_path="/files",
+        type="directory",
+        parent_id=system.id,
+        route_path="/system/files",
         route_name="Files",
-        component="#/views/files/index.vue",
         icon="lucide:folder",
+        sort=100,
+    )
+    if files.component is not None or files.permission_code is not None:
+        files.component = None
+        files.permission_code = None
+        session.add(files)
+        session.flush()
+    file_channels = ensure_menu(
+        session=session,
+        title="menu.fileChannels",
+        type="menu",
+        parent_id=files.id,
+        route_path="/system/files/channels",
+        route_name="FileChannels",
+        component="#/views/files/channels/index.vue",
+        icon="lucide:database",
+        permission_code="system:file:channel:list",
+        sort=10,
+    )
+    file_config = ensure_menu(
+        session=session,
+        title="menu.fileConfig",
+        type="menu",
+        parent_id=files.id,
+        route_path="/system/files/config",
+        route_name="FileConfig",
+        component="#/views/files/config/index.vue",
+        icon="lucide:settings-2",
+        permission_code="system:file:config:list",
+        sort=20,
+    )
+    file_list = ensure_menu(
+        session=session,
+        title="menu.fileList",
+        type="menu",
+        parent_id=files.id,
+        route_path="/system/files/list",
+        route_name="FileList",
+        component="#/views/files/index.vue",
+        icon="lucide:files",
         permission_code="system:file:list",
-        sort=25,
+        sort=30,
+    )
+    message_center = ensure_menu(
+        session=session,
+        title="menu.messageCenter",
+        type="directory",
+        parent_id=system.id,
+        route_path="/system/message-center",
+        route_name="MessageCenter",
+        icon="lucide:messages-square",
+        sort=110,
     )
     notices = ensure_menu(
         session=session,
         title="menu.notices",
         type="menu",
-        route_path="/notices",
+        parent_id=message_center.id,
+        route_path="/message-center/notices",
         route_name="Notices",
         component="#/views/notices/index.vue",
         icon="lucide:megaphone",
         permission_code="system:notice:list",
-        sort=26,
+        sort=10,
     )
     messages = ensure_menu(
         session=session,
         title="menu.messages",
         type="menu",
-        route_path="/messages",
+        parent_id=message_center.id,
+        route_path="/message-center/messages",
         route_name="Messages",
         component="#/views/messages/index.vue",
         icon="lucide:mail",
         permission_code="personal:message:list",
-        sort=27,
+        sort=20,
+    )
+    site_messages = ensure_menu(
+        session=session,
+        title="menu.siteMessages",
+        type="directory",
+        parent_id=message_center.id,
+        route_path="/system/message-center/site-messages",
+        route_name="SiteMessages",
+        component="#/views/_core/router-view.vue",
+        icon="lucide:inbox",
+        sort=30,
+    )
+    site_message_templates = ensure_menu(
+        session=session,
+        title="menu.siteMessageTemplates",
+        type="menu",
+        parent_id=site_messages.id,
+        route_path="/system/message-center/site-messages/templates",
+        route_name="SiteMessageTemplates",
+        component="#/views/site-messages/templates/index.vue",
+        icon="lucide:archive",
+        permission_code="system:site-message-template:list",
+        sort=10,
+    )
+    site_message_list = ensure_menu(
+        session=session,
+        title="menu.siteMessageList",
+        type="menu",
+        parent_id=site_messages.id,
+        route_path="/system/message-center/site-messages/list",
+        route_name="SiteMessageList",
+        component="#/views/site-messages/messages/index.vue",
+        icon="lucide:edit-3",
+        permission_code="system:site-message:list",
+        sort=20,
+    )
+    sms = ensure_menu(
+        session=session,
+        title="menu.sms",
+        type="directory",
+        parent_id=message_center.id,
+        route_path="/system/message-center/sms",
+        route_name="Sms",
+        component="#/views/_core/router-view.vue",
+        icon="lucide:message-square-more",
+        sort=40,
+    )
+    sms_channels = ensure_menu(
+        session=session,
+        title="menu.smsChannels",
+        type="menu",
+        parent_id=sms.id,
+        route_path="/system/message-center/sms/channels",
+        route_name="SmsChannels",
+        component="#/views/sms/channels/index.vue",
+        icon="lucide:messages-square",
+        permission_code="system:sms-channel:list",
+        sort=10,
+    )
+    sms_templates = ensure_menu(
+        session=session,
+        title="menu.smsTemplates",
+        type="menu",
+        parent_id=sms.id,
+        route_path="/system/message-center/sms/templates",
+        route_name="SmsTemplates",
+        component="#/views/sms/templates/index.vue",
+        icon="lucide:scroll-text",
+        permission_code="system:sms-template:list",
+        sort=20,
+    )
+    sms_logs = ensure_menu(
+        session=session,
+        title="menu.smsLogs",
+        type="menu",
+        parent_id=sms.id,
+        route_path="/system/message-center/sms/logs",
+        route_name="SmsLogs",
+        component="#/views/sms/logs/index.vue",
+        icon="lucide:send",
+        permission_code="system:sms-log:list",
+        sort=30,
+    )
+    mail = ensure_menu(
+        session=session,
+        title="menu.mail",
+        type="directory",
+        parent_id=message_center.id,
+        route_path="/system/message-center/mail",
+        route_name="Mail",
+        component="#/views/_core/router-view.vue",
+        icon="lucide:mail",
+        sort=50,
+    )
+    mail_accounts = ensure_menu(
+        session=session,
+        title="menu.mailAccounts",
+        type="menu",
+        parent_id=mail.id,
+        route_path="/system/message-center/mail/accounts",
+        route_name="MailAccounts",
+        component="#/views/mail/accounts/index.vue",
+        icon="lucide:mail-check",
+        permission_code="system:mail-account:list",
+        sort=10,
+    )
+    mail_templates = ensure_menu(
+        session=session,
+        title="menu.mailTemplates",
+        type="menu",
+        parent_id=mail.id,
+        route_path="/system/message-center/mail/templates",
+        route_name="MailTemplates",
+        component="#/views/mail/templates/index.vue",
+        icon="lucide:scroll-text",
+        permission_code="system:mail-template:list",
+        sort=20,
+    )
+    mail_logs = ensure_menu(
+        session=session,
+        title="menu.mailLogs",
+        type="menu",
+        parent_id=mail.id,
+        route_path="/system/message-center/mail/logs",
+        route_name="MailLogs",
+        component="#/views/mail/logs/index.vue",
+        icon="lucide:send",
+        permission_code="system:mail-log:list",
+        sort=30,
     )
     items = ensure_menu(
         session=session,
@@ -447,11 +726,67 @@ def seed_menus(*, session: Session) -> list[Menu]:
         (dictionaries.id, "删除字典", "system:dict:delete", 63),
         (system_settings.id, "编辑参数", "system:setting:update", 71),
         (online_users.id, "强制下线", "system:session:revoke", 81),
-        (files.id, "上传文件", "system:file:upload", 71),
-        (files.id, "删除文件", "system:file:delete", 72),
+        (oauth2_clients.id, "新增OAuth2客户端", "system:oauth2-client:create", 82),
+        (oauth2_clients.id, "编辑OAuth2客户端", "system:oauth2-client:update", 83),
+        (oauth2_clients.id, "删除OAuth2客户端", "system:oauth2-client:delete", 84),
+        (oauth2_tokens.id, "吊销OAuth2令牌", "system:oauth2-token:delete", 85),
+        (social_clients.id, "新增三方客户端", "system:social-client:create", 86),
+        (social_clients.id, "编辑三方客户端", "system:social-client:update", 87),
+        (social_clients.id, "删除三方客户端", "system:social-client:delete", 88),
+        (file_list.id, "上传文件", "system:file:upload", 71),
+        (file_list.id, "删除文件", "system:file:delete", 72),
+        (file_channels.id, "新增存储渠道", "system:file:channel:create", 73),
+        (file_channels.id, "编辑存储渠道", "system:file:channel:update", 74),
+        (file_channels.id, "删除存储渠道", "system:file:channel:delete", 75),
+        (file_config.id, "编辑上传配置", "system:file:config:update", 76),
         (notices.id, "新增公告", "system:notice:create", 81),
         (notices.id, "编辑公告", "system:notice:update", 82),
         (notices.id, "删除公告", "system:notice:delete", 83),
+        (
+            site_message_templates.id,
+            "新增站内信模板",
+            "system:site-message-template:create",
+            84,
+        ),
+        (
+            site_message_templates.id,
+            "编辑站内信模板",
+            "system:site-message-template:update",
+            85,
+        ),
+        (
+            site_message_templates.id,
+            "删除站内信模板",
+            "system:site-message-template:delete",
+            86,
+        ),
+        (
+            site_message_templates.id,
+            "发送测试站内信",
+            "system:site-message-template:send",
+            87,
+        ),
+        (
+            site_message_list.id,
+            "删除站内信",
+            "system:site-message:delete",
+            88,
+        ),
+        (sms_channels.id, "新增短信渠道", "system:sms-channel:create", 91),
+        (sms_channels.id, "编辑短信渠道", "system:sms-channel:update", 92),
+        (sms_channels.id, "删除短信渠道", "system:sms-channel:delete", 93),
+        (sms_templates.id, "新增短信模板", "system:sms-template:create", 94),
+        (sms_templates.id, "编辑短信模板", "system:sms-template:update", 95),
+        (sms_templates.id, "删除短信模板", "system:sms-template:delete", 96),
+        (sms_templates.id, "发送测试短信", "system:sms-template:send", 97),
+        (mail_accounts.id, "新增邮箱账号", "system:mail-account:create", 101),
+        (mail_accounts.id, "编辑邮箱账号", "system:mail-account:update", 102),
+        (mail_accounts.id, "删除邮箱账号", "system:mail-account:delete", 103),
+        (mail_templates.id, "新增邮件模板", "system:mail-template:create", 104),
+        (mail_templates.id, "编辑邮件模板", "system:mail-template:update", 105),
+        (mail_templates.id, "删除邮件模板", "system:mail-template:delete", 106),
+        (mail_templates.id, "发送测试邮件", "system:mail-template:send", 107),
+        (mail_logs.id, "重发邮件", "system:mail-log:resend", 108),
         (items.id, "新增示例", "business:item:create", 51),
         (items.id, "编辑示例", "business:item:update", 52),
         (items.id, "删除示例", "business:item:delete", 53),
@@ -479,15 +814,113 @@ def seed_menus(*, session: Session) -> list[Menu]:
         dictionaries,
         system_settings,
         online_users,
+        oauth2,
+        oauth2_clients,
+        oauth2_tokens,
+        social,
+        social_clients,
+        social_users,
+        message_center,
         logs,
         login_logs,
         operation_logs,
         files,
+        file_channels,
+        file_config,
+        file_list,
         notices,
         messages,
+        site_messages,
+        site_message_templates,
+        site_message_list,
+        sms,
+        sms_channels,
+        sms_templates,
+        sms_logs,
+        mail,
+        mail_accounts,
+        mail_templates,
+        mail_logs,
         items,
         *buttons,
     ]
+
+
+def remove_code_generation_menus(*, session: Session) -> None:
+    obsolete_menus = [
+        menu
+        for menu in session.exec(select(Menu)).all()
+        if menu.route_path == "/system/codegen"
+        or (menu.permission_code or "").startswith("system:codegen:")
+    ]
+    if not obsolete_menus:
+        return
+
+    obsolete_menu_ids = {menu.id for menu in obsolete_menus}
+    for role_menu in session.exec(select(RoleMenu)).all():
+        if role_menu.menu_id in obsolete_menu_ids:
+            session.delete(role_menu)
+    session.flush()
+
+    child_menus = [
+        menu for menu in obsolete_menus if menu.parent_id in obsolete_menu_ids
+    ]
+    for menu in child_menus:
+        session.delete(menu)
+    if child_menus:
+        session.flush()
+
+    for menu in obsolete_menus:
+        if menu not in child_menus:
+            session.delete(menu)
+    session.flush()
+
+
+def migrate_system_directory_menu(
+    *,
+    session: Session,
+    system: Menu,
+    route_name: str,
+    legacy_path: str,
+    system_path: str,
+    sort: int,
+) -> None:
+    legacy_menu = session.exec(
+        select(Menu).where(
+            Menu.route_name == route_name,
+            Menu.route_path == legacy_path,
+        )
+    ).first()
+    if not legacy_menu:
+        return
+
+    system_menu = session.exec(
+        select(Menu).where(Menu.route_path == system_path)
+    ).first()
+    if not system_menu:
+        legacy_menu.parent_id = system.id
+        legacy_menu.route_path = system_path
+        legacy_menu.sort = sort
+        legacy_menu.updated_at = get_datetime_utc()
+        session.add(legacy_menu)
+        session.flush()
+        return
+
+    for role_menu in session.exec(
+        select(RoleMenu).where(RoleMenu.menu_id == legacy_menu.id)
+    ).all():
+        target_mapping = session.exec(
+            select(RoleMenu).where(
+                RoleMenu.role_id == role_menu.role_id,
+                RoleMenu.menu_id == system_menu.id,
+            )
+        ).first()
+        if not target_mapping:
+            session.add(RoleMenu(role_id=role_menu.role_id, menu_id=system_menu.id))
+        session.delete(role_menu)
+    session.flush()
+    session.delete(legacy_menu)
+    session.flush()
 
 
 def seed_posts(*, session: Session) -> None:
@@ -583,6 +1016,60 @@ def seed_dictionaries(*, session: Session) -> None:
         color="green",
         sort=1,
     )
+    user_type = ensure_dictionary_type(
+        session=session,
+        code="user_type",
+        name="用户类型",
+        description="登录主体类型",
+    )
+    ensure_dictionary_item(session=session, type_=user_type, label="管理后台", value="admin")
+    ensure_dictionary_item(session=session, type_=user_type, label="移动端", value="member", sort=1)
+
+    oauth2_grant_type = ensure_dictionary_type(
+        session=session,
+        code="system_oauth2_grant_type",
+        name="OAuth 2.0 授权类型",
+        description="OAuth 2.0 客户端授权模式",
+    )
+    for sort, value in enumerate(
+        [
+            "authorization_code",
+            "refresh_token",
+            "password",
+            "client_credentials",
+            "implicit",
+        ]
+    ):
+        ensure_dictionary_item(
+            session=session,
+            type_=oauth2_grant_type,
+            label=value,
+            value=value,
+            sort=sort,
+        )
+
+    social_type = ensure_dictionary_type(
+        session=session,
+        code="system_social_type",
+        name="社交类型",
+        description="第三方登录平台类型",
+    )
+    social_options = [
+        ("gitee", "Gitee"),
+        ("dingtalk", "钉钉"),
+        ("wechat_open", "微信开放平台"),
+        ("wechat_mp", "微信公众平台"),
+        ("wechat_mini", "微信小程序"),
+        ("wechat_work", "企业微信"),
+    ]
+    for sort, (value, label) in enumerate(social_options):
+        ensure_dictionary_item(
+            session=session,
+            type_=social_type,
+            label=label,
+            value=value,
+            sort=sort,
+        )
 
 
 def ensure_setting(
@@ -659,6 +1146,167 @@ def seed_settings(*, session: Session) -> None:
         is_public=False,
         is_system=True,
     )
+    ensure_setting(
+        session=session,
+        key="upload.allowed_extensions",
+        name="允许上传扩展名",
+        value=settings.UPLOAD_ALLOWED_EXTENSIONS,
+        value_type="string",
+        group="upload",
+        is_public=False,
+        is_system=True,
+    )
+    ensure_setting(
+        session=session,
+        key="upload.default_public",
+        name="默认公开访问",
+        value="false",
+        value_type="boolean",
+        group="upload",
+        is_public=False,
+        is_system=True,
+    )
+    ensure_setting(
+        session=session,
+        key="upload.presigned_url_expire_seconds",
+        name="下载链接有效期秒数",
+        value=str(settings.S3_PRESIGNED_URL_EXPIRE_SECONDS),
+        value_type="number",
+        group="upload",
+        is_public=False,
+        is_system=True,
+    )
+
+
+def seed_storage_channels(*, session: Session) -> None:
+    existing_default = session.exec(
+        select(FileStorageChannel).where(FileStorageChannel.is_default)
+    ).first()
+    if existing_default:
+        return
+
+    provider = settings.STORAGE_PROVIDER
+    channel = FileStorageChannel(
+        name="本地存储" if provider == "local" else "默认对象存储",
+        code="local" if provider == "local" else "default-s3",
+        provider=provider,
+        endpoint_url=settings.S3_ENDPOINT_URL,
+        region=settings.S3_REGION,
+        bucket=settings.S3_BUCKET,
+        access_key_id=settings.S3_ACCESS_KEY_ID,
+        secret_access_key=settings.S3_SECRET_ACCESS_KEY,
+        object_prefix=settings.S3_OBJECT_PREFIX,
+        addressing_style=settings.S3_ADDRESSING_STYLE,
+        auto_create_bucket=settings.S3_AUTO_CREATE_BUCKET,
+        is_default=True,
+        is_active=True,
+        remark="由环境变量初始化，可在后台调整。",
+    )
+    session.add(channel)
+    session.flush()
+
+
+def seed_sms_channels(*, session: Session) -> None:
+    debug_channel = session.exec(
+        select(SmsChannel).where(SmsChannel.code == "debug")
+    ).first()
+    if not debug_channel:
+        debug_channel = SmsChannel(
+            name="本地调试渠道",
+            code="debug",
+            provider="debug",
+            signature="系统通知",
+            is_default=True,
+            is_active=True,
+            remark="仅记录发送结果，不会向真实手机号发送短信。",
+        )
+        session.add(debug_channel)
+        session.flush()
+
+    sample_template = session.exec(
+        select(SmsTemplate).where(SmsTemplate.code == "verify_code")
+    ).first()
+    if not sample_template:
+        session.add(
+            SmsTemplate(
+                type="verification",
+                code="verify_code",
+                name="验证码",
+                content="您的验证码为 {code}，5 分钟内有效。",
+                params="code",
+                remark="系统内置演示模板，可用于验证短信渠道和日志。",
+                channel_id=debug_channel.id,
+                channel_code=debug_channel.code,
+                is_active=True,
+            )
+        )
+        session.flush()
+
+
+def seed_mail_accounts(*, session: Session) -> None:
+    if not settings.SMTP_HOST or not settings.EMAILS_FROM_EMAIL:
+        return
+
+    default_account = session.exec(
+        select(MailAccount).where(MailAccount.code == "default")
+    ).first()
+    if not default_account:
+        default_account = MailAccount(
+            name="系统邮箱账号",
+            code="default",
+            email=settings.EMAILS_FROM_EMAIL,
+            username=settings.SMTP_USER,
+            password=settings.SMTP_PASSWORD,
+            host=settings.SMTP_HOST,
+            port=settings.SMTP_PORT,
+            ssl_enable=settings.SMTP_SSL,
+            starttls_enable=settings.SMTP_TLS,
+            is_default=True,
+            is_active=True,
+            remark="由环境变量初始化，可在后台调整。",
+        )
+        session.add(default_account)
+        session.flush()
+
+    sample_template = session.exec(
+        select(MailTemplate).where(MailTemplate.code == "welcome_mail")
+    ).first()
+    if not sample_template:
+        session.add(
+            MailTemplate(
+                code="welcome_mail",
+                name="欢迎邮件",
+                account_id=default_account.id,
+                account_code=default_account.code,
+                nickname=settings.EMAILS_FROM_NAME,
+                title="欢迎加入 {project}",
+                content="<p>您好，{name}。</p><p>欢迎使用 {project}。</p>",
+                params="project,name",
+                remark="系统内置演示模板，可用于验证邮箱账号和日志。",
+                is_active=True,
+            )
+        )
+        session.flush()
+
+
+def seed_site_message_templates(*, session: Session) -> None:
+    welcome_template = session.exec(
+        select(SiteMessageTemplate).where(SiteMessageTemplate.code == "system_notice")
+    ).first()
+    if not welcome_template:
+        session.add(
+            SiteMessageTemplate(
+                code="system_notice",
+                name="通知公告",
+                sender_name="通知公告",
+                content="尊敬的用户，{title}",
+                type="notice",
+                params="title",
+                remark="系统内置演示模板，可用于验证站内信发送和列表。",
+                is_active=True,
+            )
+        )
+        session.flush()
 
 
 def bind_role_menus(*, session: Session, role: Role, menus: list[Menu]) -> None:

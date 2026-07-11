@@ -26,6 +26,17 @@
 4. 给新增、编辑、删除、导入导出等按钮加 `v-access:code` 或表格 `auth`。
 5. 从仓库根目录运行 `pnpm generate:api`、`pnpm frontend:typecheck`、`pnpm frontend:build`。
 
+## 代码生成器
+
+系统管理中的代码生成器可根据现有 PostgreSQL 表下载模块起始代码。ZIP 包含：
+
+- `backend/schemas.py`：Schema 起始定义。
+- `backend/routes.py`：带权限码的 CRUD 路由骨架。
+- `frontend/api/*.ts`：前端 API 封装。
+- `frontend/views/*/index.vue`：Vben 列表页。
+
+生成器不会直接向运行中的 `models.py` 注册模型或路由。合并前应复核字段类型、主键策略、关联关系、数据权限和业务校验，并按照本指南完成迁移、菜单权限与测试。
+
 ## 发布前检查
 
 新增模块进入发布前，至少确认：

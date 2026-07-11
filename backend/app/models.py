@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 
 from pydantic import EmailStr
-from sqlalchemy import DateTime
+from sqlalchemy import DateTime, UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -541,6 +541,227 @@ class UserSessionsPublic(SQLModel):
     page_size: int
 
 
+class OAuth2ClientBase(SQLModel):
+    client_id: str = Field(min_length=1, max_length=100, unique=True, index=True)
+    client_secret: str | None = Field(default=None, max_length=500)
+    name: str = Field(min_length=1, max_length=100)
+    logo: str | None = Field(default=None, max_length=500)
+    description: str | None = Field(default=None, max_length=500)
+    access_token_validity_seconds: int = Field(default=7200, ge=60)
+    refresh_token_validity_seconds: int = Field(default=2_592_000, ge=60)
+    authorized_grant_types: str = Field(
+        default="authorization_code,refresh_token", max_length=500
+    )
+    scopes: str | None = Field(default="read,write", max_length=500)
+    auto_approve_scopes: str | None = Field(default=None, max_length=500)
+    redirect_uris: str | None = Field(default=None, max_length=1000)
+    authorities: str | None = Field(default=None, max_length=500)
+    resource_ids: str | None = Field(default=None, max_length=500)
+    additional_information: str | None = Field(default=None, max_length=2000)
+    is_active: bool = True
+
+
+class OAuth2Client(OAuth2ClientBase, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    updated_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class OAuth2ClientCreate(OAuth2ClientBase):
+    pass
+
+
+class OAuth2ClientUpdate(SQLModel):
+    client_id: str | None = Field(default=None, min_length=1, max_length=100)
+    client_secret: str | None = Field(default=None, max_length=500)
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    logo: str | None = Field(default=None, max_length=500)
+    description: str | None = Field(default=None, max_length=500)
+    access_token_validity_seconds: int | None = Field(default=None, ge=60)
+    refresh_token_validity_seconds: int | None = Field(default=None, ge=60)
+    authorized_grant_types: str | None = Field(default=None, max_length=500)
+    scopes: str | None = Field(default=None, max_length=500)
+    auto_approve_scopes: str | None = Field(default=None, max_length=500)
+    redirect_uris: str | None = Field(default=None, max_length=1000)
+    authorities: str | None = Field(default=None, max_length=500)
+    resource_ids: str | None = Field(default=None, max_length=500)
+    additional_information: str | None = Field(default=None, max_length=2000)
+    is_active: bool | None = None
+
+
+class OAuth2ClientPublic(OAuth2ClientBase):
+    id: uuid.UUID
+    client_secret: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class OAuth2ClientsPublic(SQLModel):
+    items: list[OAuth2ClientPublic]
+    total: int
+    page: int
+    page_size: int
+
+
+class OAuth2AccessToken(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    access_token: str = Field(max_length=500, unique=True, index=True)
+    refresh_token: str | None = Field(default=None, max_length=500, index=True)
+    user_id: uuid.UUID | None = Field(
+        default=None, foreign_key="user.id", index=True, ondelete="SET NULL"
+    )
+    user_email: str | None = Field(default=None, max_length=255)
+    user_full_name: str | None = Field(default=None, max_length=255)
+    client_id: str = Field(max_length=100, index=True)
+    scopes: str | None = Field(default=None, max_length=500)
+    expires_at: datetime = Field(sa_type=DateTime(timezone=True))  # type: ignore
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    revoked_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))  # type: ignore
+
+
+class OAuth2AccessTokenPublic(SQLModel):
+    id: uuid.UUID
+    access_token: str
+    refresh_token: str | None = None
+    user_id: uuid.UUID | None = None
+    user_email: str | None = None
+    user_full_name: str | None = None
+    client_id: str
+    scopes: str | None = None
+    expires_at: datetime
+    created_at: datetime | None = None
+    revoked_at: datetime | None = None
+
+
+class OAuth2AccessTokensPublic(SQLModel):
+    items: list[OAuth2AccessTokenPublic]
+    total: int
+    page: int
+    page_size: int
+
+
+class SocialClientBase(SQLModel):
+    name: str = Field(min_length=1, max_length=100)
+    social_type: str = Field(min_length=1, max_length=50, index=True)
+    user_type: str = Field(default="admin", max_length=50)
+    client_id: str = Field(min_length=1, max_length=255)
+    client_secret: str | None = Field(default=None, max_length=500)
+    agent_id: str | None = Field(default=None, max_length=100)
+    is_active: bool = True
+    remark: str | None = Field(default=None, max_length=255)
+
+
+class SocialClient(SocialClientBase, table=True):
+    __table_args__ = (
+        UniqueConstraint("social_type", "user_type", name="uq_socialclient_social_type_user_type"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    updated_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class SocialClientCreate(SocialClientBase):
+    pass
+
+
+class SocialClientUpdate(SQLModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    social_type: str | None = Field(default=None, min_length=1, max_length=50)
+    user_type: str | None = Field(default=None, max_length=50)
+    client_id: str | None = Field(default=None, min_length=1, max_length=255)
+    client_secret: str | None = Field(default=None, max_length=500)
+    agent_id: str | None = Field(default=None, max_length=100)
+    is_active: bool | None = None
+    remark: str | None = Field(default=None, max_length=255)
+
+
+class SocialClientPublic(SocialClientBase):
+    id: uuid.UUID
+    client_secret: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class SocialClientsPublic(SQLModel):
+    items: list[SocialClientPublic]
+    total: int
+    page: int
+    page_size: int
+
+
+class SocialUser(SQLModel, table=True):
+    __table_args__ = (UniqueConstraint("type", "openid", name="uq_socialuser_type_openid"),)
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    type: str = Field(max_length=50, index=True)
+    openid: str = Field(max_length=255, index=True)
+    unionid: str | None = Field(default=None, max_length=255)
+    nickname: str | None = Field(default=None, max_length=255)
+    avatar: str | None = Field(default=None, max_length=500)
+    token: str | None = Field(default=None, max_length=1000)
+    raw_token_info: str | None = Field(default=None, max_length=4000)
+    raw_user_info: str | None = Field(default=None, max_length=4000)
+    code: str | None = Field(default=None, max_length=255)
+    state: str | None = Field(default=None, max_length=255)
+    user_id: uuid.UUID | None = Field(
+        default=None, foreign_key="user.id", index=True, ondelete="SET NULL"
+    )
+    social_client_id: uuid.UUID | None = Field(
+        default=None, foreign_key="socialclient.id", index=True, ondelete="SET NULL"
+    )
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    updated_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class SocialUserPublic(SQLModel):
+    id: uuid.UUID
+    type: str
+    openid: str
+    unionid: str | None = None
+    nickname: str | None = None
+    avatar: str | None = None
+    token: str | None = None
+    raw_token_info: str | None = None
+    raw_user_info: str | None = None
+    code: str | None = None
+    state: str | None = None
+    user_id: uuid.UUID | None = None
+    social_client_id: uuid.UUID | None = None
+    user_email: str | None = None
+    user_full_name: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class SocialUsersPublic(SQLModel):
+    items: list[SocialUserPublic]
+    total: int
+    page: int
+    page_size: int
+
+
 class OperationLogBase(SQLModel):
     user_id: uuid.UUID | None = None
     email: str | None = Field(default=None, max_length=255)
@@ -610,6 +831,471 @@ class FileAssetsPublic(SQLModel):
     page_size: int
 
 
+class FileStorageChannelBase(SQLModel):
+    name: str = Field(min_length=1, max_length=100)
+    code: str = Field(min_length=1, max_length=100, unique=True, index=True)
+    provider: str = Field(default="local", max_length=50)
+    endpoint_url: str | None = Field(default=None, max_length=500)
+    region: str | None = Field(default=None, max_length=100)
+    bucket: str | None = Field(default=None, max_length=255)
+    access_key_id: str | None = Field(default=None, max_length=255)
+    secret_access_key: str | None = Field(default=None, max_length=500)
+    object_prefix: str | None = Field(default=None, max_length=255)
+    addressing_style: str = Field(default="auto", max_length=20)
+    auto_create_bucket: bool = False
+    is_default: bool = False
+    is_active: bool = True
+    remark: str | None = Field(default=None, max_length=255)
+
+
+class FileStorageChannel(FileStorageChannelBase, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    updated_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class FileStorageChannelCreate(FileStorageChannelBase):
+    pass
+
+
+class FileStorageChannelUpdate(SQLModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    code: str | None = Field(default=None, min_length=1, max_length=100)
+    provider: str | None = Field(default=None, max_length=50)
+    endpoint_url: str | None = Field(default=None, max_length=500)
+    region: str | None = Field(default=None, max_length=100)
+    bucket: str | None = Field(default=None, max_length=255)
+    access_key_id: str | None = Field(default=None, max_length=255)
+    secret_access_key: str | None = Field(default=None, max_length=500)
+    object_prefix: str | None = Field(default=None, max_length=255)
+    addressing_style: str | None = Field(default=None, max_length=20)
+    auto_create_bucket: bool | None = None
+    is_default: bool | None = None
+    is_active: bool | None = None
+    remark: str | None = Field(default=None, max_length=255)
+
+
+class FileStorageChannelPublic(FileStorageChannelBase):
+    id: uuid.UUID
+    secret_access_key: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class FileStorageChannelsPublic(SQLModel):
+    items: list[FileStorageChannelPublic]
+    total: int
+    page: int
+    page_size: int
+
+
+class FileDownloadUrl(SQLModel):
+    url: str
+    expires_in: int | None = None
+
+
+class StorageConfigPublic(SQLModel):
+    provider: str
+    channel_id: uuid.UUID | None = None
+    channel_name: str | None = None
+    max_size_mb: int
+    allowed_extensions: str
+    default_public: bool = False
+    s3_bucket: str | None = None
+    s3_endpoint_url: str | None = None
+    presigned_url_expire_seconds: int | None = None
+
+
+class UploadConfigPublic(SQLModel):
+    max_size_mb: int
+    allowed_extensions: str
+    default_public: bool
+    presigned_url_expire_seconds: int
+
+
+class UploadConfigUpdate(SQLModel):
+    max_size_mb: int | None = Field(default=None, ge=1, le=1024)
+    allowed_extensions: str | None = Field(default=None, max_length=1000)
+    default_public: bool | None = None
+    presigned_url_expire_seconds: int | None = Field(default=None, ge=60, le=86_400)
+
+
+class SmsChannelBase(SQLModel):
+    name: str = Field(min_length=1, max_length=100)
+    code: str = Field(min_length=1, max_length=100, unique=True, index=True)
+    provider: str = Field(default="debug", max_length=50)
+    signature: str = Field(min_length=1, max_length=100)
+    api_key: str | None = Field(default=None, max_length=500)
+    api_secret: str | None = Field(default=None, max_length=500)
+    callback_url: str | None = Field(default=None, max_length=500)
+    is_default: bool = False
+    is_active: bool = True
+    remark: str | None = Field(default=None, max_length=255)
+
+
+class SmsChannel(SmsChannelBase, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    updated_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class SmsChannelCreate(SmsChannelBase):
+    pass
+
+
+class SmsChannelUpdate(SQLModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    code: str | None = Field(default=None, min_length=1, max_length=100)
+    provider: str | None = Field(default=None, max_length=50)
+    signature: str | None = Field(default=None, min_length=1, max_length=100)
+    api_key: str | None = Field(default=None, max_length=500)
+    api_secret: str | None = Field(default=None, max_length=500)
+    callback_url: str | None = Field(default=None, max_length=500)
+    is_default: bool | None = None
+    is_active: bool | None = None
+    remark: str | None = Field(default=None, max_length=255)
+
+
+class SmsChannelPublic(SmsChannelBase):
+    id: uuid.UUID
+    api_secret: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class SmsChannelsPublic(SQLModel):
+    items: list[SmsChannelPublic]
+    total: int
+    page: int
+    page_size: int
+
+
+class SmsTemplateBase(SQLModel):
+    type: str = Field(default="notification", max_length=50)
+    code: str = Field(min_length=1, max_length=100, unique=True, index=True)
+    name: str = Field(min_length=1, max_length=100)
+    content: str = Field(min_length=1, max_length=1000)
+    remark: str | None = Field(default=None, max_length=255)
+    api_template_id: str | None = Field(default=None, max_length=100)
+    channel_id: uuid.UUID | None = Field(
+        default=None, foreign_key="smschannel.id", ondelete="SET NULL"
+    )
+    channel_code: str | None = Field(default=None, max_length=100)
+    is_active: bool = True
+
+
+class SmsTemplate(SmsTemplateBase, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    params: str = Field(default="", max_length=500)
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    updated_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class SmsTemplateCreate(SmsTemplateBase):
+    pass
+
+
+class SmsTemplateUpdate(SQLModel):
+    type: str | None = Field(default=None, max_length=50)
+    code: str | None = Field(default=None, min_length=1, max_length=100)
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    content: str | None = Field(default=None, min_length=1, max_length=1000)
+    remark: str | None = Field(default=None, max_length=255)
+    api_template_id: str | None = Field(default=None, max_length=100)
+    channel_id: uuid.UUID | None = None
+    is_active: bool | None = None
+
+
+class SmsTemplatePublic(SmsTemplateBase):
+    id: uuid.UUID
+    params: str
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class SmsTemplatesPublic(SQLModel):
+    items: list[SmsTemplatePublic]
+    total: int
+    page: int
+    page_size: int
+
+
+class SmsSendRequest(SQLModel):
+    mobile: str = Field(min_length=6, max_length=32)
+    template_params: dict[str, str] = Field(default_factory=dict)
+
+
+class SmsDeliveryCallback(SQLModel):
+    request_id: str = Field(min_length=1, max_length=100)
+    status: str = Field(min_length=1, max_length=20)
+    message: str | None = Field(default=None, max_length=1000)
+
+
+class SmsLog(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    channel_id: uuid.UUID | None = Field(
+        default=None, foreign_key="smschannel.id", ondelete="SET NULL"
+    )
+    channel_code: str | None = Field(default=None, max_length=100)
+    template_id: uuid.UUID | None = Field(
+        default=None, foreign_key="smstemplate.id", ondelete="SET NULL"
+    )
+    template_code: str | None = Field(default=None, max_length=100)
+    template_name: str | None = Field(default=None, max_length=100)
+    template_type: str | None = Field(default=None, max_length=50)
+    template_content: str = Field(max_length=1000)
+    template_params: str | None = Field(default=None, max_length=2000)
+    api_template_id: str | None = Field(default=None, max_length=100)
+    mobile: str = Field(max_length=32, index=True)
+    send_status: str = Field(default="success", max_length=20)
+    sent_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    api_send_code: str | None = Field(default=None, max_length=100)
+    api_send_message: str | None = Field(default=None, max_length=1000)
+    api_request_id: str | None = Field(default=None, max_length=100)
+    api_serial_no: str | None = Field(default=None, max_length=100)
+    receive_status: str = Field(default="pending", max_length=20)
+    received_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))  # type: ignore
+    api_receive_code: str | None = Field(default=None, max_length=100)
+    api_receive_message: str | None = Field(default=None, max_length=1000)
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class SmsLogPublic(SQLModel):
+    id: uuid.UUID
+    channel_id: uuid.UUID | None = None
+    channel_code: str | None = None
+    template_id: uuid.UUID | None = None
+    template_code: str | None = None
+    template_name: str | None = None
+    template_type: str | None = None
+    template_content: str
+    template_params: str | None = None
+    api_template_id: str | None = None
+    mobile: str
+    send_status: str
+    sent_at: datetime | None = None
+    api_send_code: str | None = None
+    api_send_message: str | None = None
+    api_request_id: str | None = None
+    api_serial_no: str | None = None
+    receive_status: str
+    received_at: datetime | None = None
+    api_receive_code: str | None = None
+    api_receive_message: str | None = None
+    created_at: datetime | None = None
+
+
+class SmsLogsPublic(SQLModel):
+    items: list[SmsLogPublic]
+    total: int
+    page: int
+    page_size: int
+
+
+class MailAccountBase(SQLModel):
+    name: str = Field(min_length=1, max_length=100)
+    code: str = Field(min_length=1, max_length=100, unique=True, index=True)
+    email: EmailStr = Field(max_length=255)
+    username: str | None = Field(default=None, max_length=255)
+    password: str | None = Field(default=None, max_length=500)
+    host: str = Field(min_length=1, max_length=255)
+    port: int = Field(default=465, ge=1, le=65_535)
+    ssl_enable: bool = True
+    starttls_enable: bool = False
+    is_default: bool = False
+    is_active: bool = True
+    remark: str | None = Field(default=None, max_length=255)
+
+
+class MailAccount(MailAccountBase, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    updated_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class MailAccountCreate(MailAccountBase):
+    pass
+
+
+class MailAccountUpdate(SQLModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    code: str | None = Field(default=None, min_length=1, max_length=100)
+    email: EmailStr | None = Field(default=None, max_length=255)
+    username: str | None = Field(default=None, max_length=255)
+    password: str | None = Field(default=None, max_length=500)
+    host: str | None = Field(default=None, min_length=1, max_length=255)
+    port: int | None = Field(default=None, ge=1, le=65_535)
+    ssl_enable: bool | None = None
+    starttls_enable: bool | None = None
+    is_default: bool | None = None
+    is_active: bool | None = None
+    remark: str | None = Field(default=None, max_length=255)
+
+
+class MailAccountPublic(MailAccountBase):
+    id: uuid.UUID
+    password: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class MailAccountsPublic(SQLModel):
+    items: list[MailAccountPublic]
+    total: int
+    page: int
+    page_size: int
+
+
+class MailTemplateBase(SQLModel):
+    name: str = Field(min_length=1, max_length=100)
+    code: str = Field(min_length=1, max_length=100, unique=True, index=True)
+    account_id: uuid.UUID | None = Field(
+        default=None, foreign_key="mailaccount.id", ondelete="SET NULL"
+    )
+    nickname: str | None = Field(default=None, max_length=100)
+    title: str = Field(min_length=1, max_length=255)
+    content: str = Field(min_length=1, max_length=20_000)
+    is_active: bool = True
+    remark: str | None = Field(default=None, max_length=255)
+
+
+class MailTemplate(MailTemplateBase, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    account_code: str | None = Field(default=None, max_length=100)
+    params: str = Field(default="", max_length=500)
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    updated_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class MailTemplateCreate(MailTemplateBase):
+    pass
+
+
+class MailTemplateUpdate(SQLModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    code: str | None = Field(default=None, min_length=1, max_length=100)
+    account_id: uuid.UUID | None = None
+    nickname: str | None = Field(default=None, max_length=100)
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    content: str | None = Field(default=None, min_length=1, max_length=20_000)
+    is_active: bool | None = None
+    remark: str | None = Field(default=None, max_length=255)
+
+
+class MailTemplatePublic(MailTemplateBase):
+    id: uuid.UUID
+    account_code: str | None = None
+    params: str
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class MailTemplatesPublic(SQLModel):
+    items: list[MailTemplatePublic]
+    total: int
+    page: int
+    page_size: int
+
+
+class MailSendRequest(SQLModel):
+    to_email: EmailStr
+    template_params: dict[str, str] = Field(default_factory=dict)
+
+
+class MailLog(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    account_id: uuid.UUID | None = Field(
+        default=None, foreign_key="mailaccount.id", ondelete="SET NULL"
+    )
+    account_code: str | None = Field(default=None, max_length=100)
+    account_name: str | None = Field(default=None, max_length=100)
+    template_id: uuid.UUID | None = Field(
+        default=None, foreign_key="mailtemplate.id", ondelete="SET NULL"
+    )
+    template_code: str | None = Field(default=None, max_length=100)
+    template_name: str | None = Field(default=None, max_length=100)
+    from_email: str = Field(max_length=255)
+    from_name: str | None = Field(default=None, max_length=100)
+    to_email: str = Field(max_length=255, index=True)
+    title: str = Field(max_length=255)
+    content: str = Field(max_length=20_000)
+    template_params: str | None = Field(default=None, max_length=4000)
+    send_status: str = Field(default="pending", max_length=20)
+    sent_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))  # type: ignore
+    message_id: str | None = Field(default=None, max_length=255)
+    send_code: str | None = Field(default=None, max_length=100)
+    send_message: str | None = Field(default=None, max_length=2000)
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class MailLogPublic(SQLModel):
+    id: uuid.UUID
+    account_id: uuid.UUID | None = None
+    account_code: str | None = None
+    account_name: str | None = None
+    template_id: uuid.UUID | None = None
+    template_code: str | None = None
+    template_name: str | None = None
+    from_email: str
+    from_name: str | None = None
+    to_email: str
+    title: str
+    content: str
+    template_params: str | None = None
+    send_status: str
+    sent_at: datetime | None = None
+    message_id: str | None = None
+    send_code: str | None = None
+    send_message: str | None = None
+    created_at: datetime | None = None
+
+
+class MailLogsPublic(SQLModel):
+    items: list[MailLogPublic]
+    total: int
+    page: int
+    page_size: int
+
+
 class NoticeBase(SQLModel):
     title: str = Field(min_length=1, max_length=200)
     content: str = Field(min_length=1, max_length=10000)
@@ -668,6 +1354,13 @@ class UserMessageBase(SQLModel):
     notice_id: uuid.UUID | None = Field(
         default=None, foreign_key="notice.id", ondelete="SET NULL"
     )
+    template_id: uuid.UUID | None = Field(
+        default=None, foreign_key="sitemessagetemplate.id", ondelete="SET NULL"
+    )
+    template_code: str | None = Field(default=None, max_length=100)
+    template_name: str | None = Field(default=None, max_length=100)
+    sender_name: str | None = Field(default=None, max_length=100)
+    template_params: str | None = Field(default=None, max_length=4000)
     title: str = Field(min_length=1, max_length=200)
     content: str = Field(min_length=1, max_length=10000)
     type: str = Field(default="notice", max_length=50)
@@ -690,6 +1383,74 @@ class UserMessagePublic(UserMessageBase):
 
 class UserMessagesPublic(SQLModel):
     items: list[UserMessagePublic]
+    total: int
+    page: int
+    page_size: int
+
+
+class SiteMessageTemplateBase(SQLModel):
+    name: str = Field(min_length=1, max_length=100)
+    code: str = Field(min_length=1, max_length=100, unique=True, index=True)
+    sender_name: str = Field(default="系统通知", min_length=1, max_length=100)
+    content: str = Field(min_length=1, max_length=10_000)
+    type: str = Field(default="notification", max_length=50)
+    is_active: bool = True
+    remark: str | None = Field(default=None, max_length=255)
+
+
+class SiteMessageTemplate(SiteMessageTemplateBase, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    params: str = Field(default="", max_length=500)
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    updated_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class SiteMessageTemplateCreate(SiteMessageTemplateBase):
+    pass
+
+
+class SiteMessageTemplateUpdate(SQLModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    code: str | None = Field(default=None, min_length=1, max_length=100)
+    sender_name: str | None = Field(default=None, min_length=1, max_length=100)
+    content: str | None = Field(default=None, min_length=1, max_length=10_000)
+    type: str | None = Field(default=None, max_length=50)
+    is_active: bool | None = None
+    remark: str | None = Field(default=None, max_length=255)
+
+
+class SiteMessageTemplatePublic(SiteMessageTemplateBase):
+    id: uuid.UUID
+    params: str
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class SiteMessageTemplatesPublic(SQLModel):
+    items: list[SiteMessageTemplatePublic]
+    total: int
+    page: int
+    page_size: int
+
+
+class SiteMessageSendRequest(SQLModel):
+    user_id: uuid.UUID
+    template_params: dict[str, str] = Field(default_factory=dict)
+
+
+class SiteMessagePublic(UserMessagePublic):
+    user_email: str | None = None
+    user_full_name: str | None = None
+
+
+class SiteMessagesPublic(SQLModel):
+    items: list[SiteMessagePublic]
     total: int
     page: int
     page_size: int

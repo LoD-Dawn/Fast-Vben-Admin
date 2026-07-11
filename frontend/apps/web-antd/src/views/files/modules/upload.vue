@@ -8,7 +8,7 @@ import { IconifyIcon } from '@vben/icons';
 
 import { Checkbox, message, UploadDragger } from 'ant-design-vue';
 
-import { uploadFileApi } from '#/api';
+import { getUploadConfigApi, uploadFileApi } from '#/api';
 
 const emits = defineEmits<{ success: [] }>();
 
@@ -17,9 +17,10 @@ const uploadPublic = ref(false);
 
 const [Modal, modalApi] = useVbenModal({
   footer: false,
-  onOpenChange(isOpen) {
+  async onOpenChange(isOpen) {
     if (isOpen) {
-      uploadPublic.value = false;
+      const config = await getUploadConfigApi();
+      uploadPublic.value = config.default_public;
     }
   },
 });

@@ -55,6 +55,17 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
     );
   }
 
+  function isAuthenticationFailure(error: any) {
+    const { response } = error ?? {};
+    const data = response?.data ?? {};
+    return (
+      response?.status === 401 ||
+      (response?.status === 403 &&
+        (data?.code === 'AUTH_TOKEN_INVALID' ||
+          data?.message === 'Could not validate credentials'))
+    );
+  }
+
   /**
    * 刷新token逻辑
    */
@@ -102,7 +113,7 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
 
   client.addResponseInterceptor({
     rejected: async (error) => {
-      if (isCurrentUserMissing(error)) {
+      if (isAuthenticationFailure(error) || isCurrentUserMissing(error)) {
         error.__skipErrorMessage = true;
         await doReAuthenticate();
       }

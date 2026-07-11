@@ -28,6 +28,8 @@ docker compose up --build
 - `UPLOAD_DIR`
 - `UPLOAD_MAX_SIZE_MB`
 - `UPLOAD_ALLOWED_EXTENSIONS`
+- `STORAGE_PROVIDER`
+- 当 `STORAGE_PROVIDER=s3` 时的 `S3_BUCKET`、访问密钥和端点
 
 后端会对默认 `changethis` 值发出安全警告。生产环境建议使用独立 PostgreSQL、HTTPS 反向代理和可靠的文件存储目录。
 
@@ -40,4 +42,12 @@ uv run alembic upgrade head
 
 ## 文件存储
 
-当前默认使用本地存储，文件元数据保存在 `fileasset` 表中。Compose 已将后端 `/app/backend/uploads` 挂载到 `app-uploads` volume，重启容器后文件不会丢失。生产环境需要定期备份上传目录，并按业务场景限制可上传类型和大小。
+默认使用本地存储，文件元数据保存在 `fileasset` 表中。Compose 已将后端 `/app/backend/uploads` 挂载到 `app-uploads` volume，重启容器后文件不会丢失。
+
+要使用 MinIO 或其他 S3 兼容服务：
+
+1. 设置 `STORAGE_PROVIDER=s3`，并填写 `S3_ENDPOINT_URL`、`S3_BUCKET`、`S3_ACCESS_KEY_ID`、`S3_SECRET_ACCESS_KEY`。
+2. MinIO 开发环境可用 `docker compose --profile storage up --build` 启动，API 为 `http://localhost:9000`，控制台为 `http://localhost:9001`。
+3. 本地开发可设置 `S3_ADDRESSING_STYLE=path` 和 `S3_AUTO_CREATE_BUCKET=true`；生产环境建议预先创建 bucket 并关闭自动创建。
+
+应用下载接口始终执行文件权限校验；S3 文件还可以从 `GET /api/v1/files/{file_id}/download-url` 获取默认 300 秒有效的预签名 URL，可用 `S3_PRESIGNED_URL_EXPIRE_SECONDS` 调整。

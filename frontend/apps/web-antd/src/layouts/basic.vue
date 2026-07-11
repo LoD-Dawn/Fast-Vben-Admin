@@ -43,7 +43,7 @@ function mapMessageToNotification(
     isRead: message.is_read ?? false,
     message: message.content,
     title: message.title,
-    link: '/messages',
+    link: '/message-center/messages',
   };
 }
 

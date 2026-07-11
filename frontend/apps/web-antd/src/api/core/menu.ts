@@ -18,7 +18,7 @@ interface BackendMenuRoute {
 }
 
 function normalizeComponent(component?: null | string) {
-  return component?.replace(/^#/, '');
+  return component?.replace(/^#\/views/, '').replace(/^#/, '');
 }
 
 /** 兼容数据库中仍使用中文标题的旧菜单数据 */
@@ -29,9 +29,12 @@ const LEGACY_MENU_TITLE_KEYS: Record<string, string> = {
   参数配置: 'menu.systemSettings',
   字典管理: 'menu.systemDictionaries',
   文件管理: 'menu.files',
+  审计日志: 'menu.logs',
   日志审计: 'menu.logs',
+  操作日志记录: 'menu.operationLogs',
   操作日志: 'menu.operationLogs',
   用户管理: 'menu.systemUsers',
+  系统访问记录: 'menu.loginLogs',
   登录日志: 'menu.loginLogs',
   示例资源: 'menu.items',
   系统管理: 'menu.system',
@@ -40,8 +43,21 @@ const LEGACY_MENU_TITLE_KEYS: Record<string, string> = {
   部门管理: 'menu.systemDepartments',
   岗位管理: 'menu.systemPosts',
   在线用户: 'menu.systemOnlineUsers',
+  消息中心: 'menu.messageCenter',
   我的消息: 'menu.messages',
   通知公告: 'menu.notices',
+  公告管理: 'menu.notices',
+  站内信管理: 'menu.siteMessages',
+  站内信模板: 'menu.siteMessageTemplates',
+  站内信: 'menu.siteMessageList',
+  短信管理: 'menu.sms',
+  短信渠道: 'menu.smsChannels',
+  短信模板: 'menu.smsTemplates',
+  短信日志: 'menu.smsLogs',
+  邮箱管理: 'menu.mail',
+  邮箱账号: 'menu.mailAccounts',
+  邮件模板: 'menu.mailTemplates',
+  邮件日志: 'menu.mailLogs',
 };
 
 function resolveMenuTitle(title: string) {
@@ -56,7 +72,7 @@ function toRoute(menu: BackendMenuRoute): RouteRecordStringComponent {
     children: [],
     component:
       normalizeComponent(menu.component) ||
-      (menu.type === 'directory' ? 'BasicLayout' : ''),
+      (menu.type === 'directory' && !menu.parent_id ? 'BasicLayout' : ''),
     meta: {
       authority: menu.permission_code ? [menu.permission_code] : undefined,
       icon: menu.icon || undefined,

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Start v1.2 infrastructure work with S3/MinIO-compatible file storage, private
+  pre-signed download URLs, database-table code generation, and a code generation UI.
 - Add PRD, TRD, and executable v1.0 implementation plan for the FastAPI + Vben admin baseline.
 - Tighten backend RBAC checks, pagination boundaries, tree parent validation, system role/config protection, dictionary uniqueness, audit log filters, and notice message APIs.
 - Add frontend permission-controlled toolbar and table actions for users, roles, menus, departments, dictionaries, settings, files, notices, and Items.

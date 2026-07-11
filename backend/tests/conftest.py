@@ -35,7 +35,7 @@ def db() -> Generator[Session]:
         cleanup_test_dictionaries(session)
         statement = delete(Item)
         session.execute(statement)
-        statement = delete(User)
+        statement = delete(User).where(User.email != settings.FIRST_SUPERUSER)
         session.execute(statement)
         session.commit()
 
