@@ -10,13 +10,18 @@ The project already provides a practical FastAPI + Vue Vben Admin base with real
 
 Implemented modules:
 
-- Authentication, current user, password recovery, profile and password update.
-- User, role, menu, department, dictionary and system setting management.
+- Authentication, current user, password recovery, profile and password update, and configurable enterprise OIDC SSO.
+- System management for users, roles, menus, departments, posts, dictionaries, and OAuth2/social admin pages.
+- Infrastructure management for settings, file management, storage channels, and upload configuration.
 - RBAC permission codes, backend permission checks and backend-driven menu loading.
 - Login logs and operation logs.
+
+See [Enterprise OIDC configuration](docs/enterprise-oidc.md) for environment settings, local-account mapping, and security boundaries.
 - File upload, download, delete, avatar upload and file management page.
+- Local and S3/MinIO-compatible object storage with short-lived private download URLs.
 - Notice publishing and personal messages.
 - User export, Items export, Items CSV template and CSV import.
+- Database-table-driven FastAPI/Vben module ZIP generation.
 - OpenAPI TypeScript client generation.
 - Backend, frontend and Docker Compose CI workflows.
 
@@ -26,7 +31,9 @@ Verified locally:
 - Backend tests: `POSTGRES_SERVER=localhost SMTP_HOST='' uv run pytest`
 - Frontend typecheck: `pnpm -F @vben/web-antd run typecheck`
 - Frontend build: `pnpm -F @vben/web-antd run build`
+- Frontend E2E: `pnpm frontend:e2e`
 - OpenAPI generation: `pnpm generate:api`
+- Browser smoke check for menu loading, infrastructure ordering, and core page visibility
 
 The Docker Compose workflow is configured in `.github/workflows/docker-compose.yml`. Local Docker verification requires Docker to be installed.
 
@@ -115,7 +122,7 @@ pnpm frontend:e2e
 pnpm generate:api
 ```
 
-`pnpm generate:api` reads `http://localhost:8000/api/v1/openapi.json` by default and writes generated TypeScript files to `frontend/apps/web-antd/src/api/generated`. Override the schema URL with `OPENAPI_INPUT` when needed.
+`pnpm generate:api` exports a temporary OpenAPI schema from the current backend code and writes generated TypeScript files to `frontend/apps/web-antd/src/api/generated`, so it does not depend on a running server on port `8000`. Override the schema URL with `OPENAPI_INPUT` from the `frontend` directory when needed.
 
 ## More Docs
 

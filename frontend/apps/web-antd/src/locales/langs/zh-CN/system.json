@@ -58,23 +58,6 @@
     "createTime": "创建时间",
     "operation": "操作"
   },
-  "onlineUser": {
-    "title": "在线用户",
-    "list": "在线用户列表",
-    "name": "用户",
-    "email": "邮箱",
-    "fullName": "姓名",
-    "ip": "登录 IP",
-    "userAgent": "用户代理",
-    "loginTime": "登录时间",
-    "lastActiveTime": "最后活跃时间",
-    "expiresAt": "过期时间",
-    "operation": "操作",
-    "revoke": "强制下线",
-    "revokeTitle": "强制下线",
-    "revokeContent": "确认强制用户 {0} 下线吗？",
-    "revokeSuccess": "已强制下线"
-  },
   "menu": {
     "list": "菜单列表",
     "activeIcon": "激活图标",

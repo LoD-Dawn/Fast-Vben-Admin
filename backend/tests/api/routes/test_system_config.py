@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+from app.core.cache import CacheNamespace, redis_cache
 from app.core.config import settings
 from tests.utils.utils import random_lower_string
 
@@ -181,6 +182,58 @@ def test_public_settings_are_readable(client: TestClient) -> None:
     assert "auth.allow_register" in keys
 
 
+def test_public_settings_use_cached_payload(client: TestClient, monkeypatch) -> None:
+    cache_store: dict[str, list[dict[str, object]]] = {}
+
+    def fake_get_json(key: str) -> list[dict[str, object]] | None:
+        return cache_store.get(key)
+
+    def fake_set_json(
+        key: str,
+        value: list[dict[str, object]],
+        *,
+        _ttl_seconds: int | None = None,
+    ) -> None:
+        cache_store[key] = value
+
+    monkeypatch.setattr(redis_cache, "get_json", fake_get_json)
+    monkeypatch.setattr(redis_cache, "set_json", fake_set_json)
+
+    first_response = client.get(f"{settings.API_V1_STR}/settings/public")
+    assert first_response.status_code == 200
+    assert cache_store
+
+    cache_key = next(iter(cache_store))
+    cache_store[cache_key][0]["value"] = "Cached Settings Value"
+
+    second_response = client.get(f"{settings.API_V1_STR}/settings/public")
+    assert second_response.status_code == 200
+    assert any(
+        setting["value"] == "Cached Settings Value"
+        for setting in second_response.json()
+    )
+
+
+def test_updating_setting_bumps_public_settings_cache_namespace(
+    client: TestClient, superuser_token_headers: dict[str, str], monkeypatch
+) -> None:
+    bumped_namespaces: list[str] = []
+    monkeypatch.setattr(
+        redis_cache,
+        "bump_namespace",
+        lambda namespace: bumped_namespaces.append(namespace),
+    )
+
+    response = client.patch(
+        f"{settings.API_V1_STR}/settings/system.name",
+        headers=superuser_token_headers,
+        json={"value": "Fast Vben Admin Cache Test"},
+    )
+
+    assert response.status_code == 200
+    assert CacheNamespace.PUBLIC_SETTINGS in bumped_namespaces
+
+
 def test_json_setting_value_must_be_valid_json(
     client: TestClient, superuser_token_headers: dict[str, str]
 ) -> None:
@@ -192,3 +245,59 @@ def test_json_setting_value_must_be_valid_json(
 
     assert response.status_code == 400
     assert response.json()["message"] == "Setting value must be JSON"
+
+
+def test_updating_dictionary_item_bumps_dictionary_cache_namespace(
+    client: TestClient, superuser_token_headers: dict[str, str], monkeypatch
+) -> None:
+    bumped_namespaces: list[str] = []
+    monkeypatch.setattr(
+        redis_cache,
+        "bump_namespace",
+        lambda namespace: bumped_namespaces.append(namespace),
+    )
+    dictionary_code = f"dict_{random_lower_string()}"
+    type_id: str | None = None
+    item_id: str | None = None
+    try:
+        create_type_response = client.post(
+            f"{settings.API_V1_STR}/dictionary-types",
+            headers=superuser_token_headers,
+            json={
+                "code": dictionary_code,
+                "name": "测试字典",
+                "is_active": True,
+            },
+        )
+        assert create_type_response.status_code == 200
+        type_id = create_type_response.json()["id"]
+
+        create_item_response = client.post(
+            f"{settings.API_V1_STR}/dictionary-items",
+            headers=superuser_token_headers,
+            json={
+                "type_id": type_id,
+                "label": "测试项",
+                "value": "cache-test",
+                "sort": 0,
+                "is_active": True,
+            },
+        )
+        assert create_item_response.status_code == 200
+        item_id = create_item_response.json()["id"]
+
+        update_response = client.patch(
+            f"{settings.API_V1_STR}/dictionary-items/{item_id}",
+            headers=superuser_token_headers,
+            json={"label": "更新后的测试项"},
+        )
+        assert update_response.status_code == 200
+        assert CacheNamespace.DICTIONARY_ITEMS in bumped_namespaces
+    finally:
+        if type_id:
+            _delete_dictionary_type(
+                client,
+                superuser_token_headers,
+                type_id,
+                item_id,
+            )

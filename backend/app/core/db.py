@@ -244,7 +244,7 @@ def ensure_menu(
 
 
 def seed_menus(*, session: Session) -> list[Menu]:
-    remove_code_generation_menus(session=session)
+    remove_obsolete_menus(session=session)
     dashboard = ensure_menu(
         session=session,
         title="menu.dashboard",
@@ -264,6 +264,15 @@ def seed_menus(*, session: Session) -> list[Menu]:
         route_name="System",
         icon="lucide:settings",
         sort=10,
+    )
+    basic_settings = ensure_menu(
+        session=session,
+        title="menu.infrastructure",
+        type="directory",
+        route_path="/basic-settings",
+        route_name="BasicSettings",
+        icon="lucide:settings-2",
+        sort=15,
     )
     users = ensure_menu(
         session=session,
@@ -341,25 +350,13 @@ def seed_menus(*, session: Session) -> list[Menu]:
         session=session,
         title="menu.systemSettings",
         type="menu",
-        parent_id=system.id,
-        route_path="/system/settings",
+        parent_id=basic_settings.id,
+        route_path="/basic-settings/settings",
         route_name="SystemSettings",
         component="#/views/system/settings/index.vue",
         icon="lucide:sliders-horizontal",
         permission_code="system:setting:list",
-        sort=70,
-    )
-    online_users = ensure_menu(
-        session=session,
-        title="menu.systemOnlineUsers",
-        type="menu",
-        parent_id=system.id,
-        route_path="/system/online-users",
-        route_name="SystemOnlineUsers",
-        component="#/views/system/online-users/index.vue",
-        icon="lucide:monitor-smartphone",
-        permission_code="system:session:list",
-        sort=80,
+        sort=10,
     )
     oauth2 = ensure_menu(
         session=session,
@@ -429,12 +426,12 @@ def seed_menus(*, session: Session) -> list[Menu]:
         permission_code="system:social-user:list",
         sort=20,
     )
-    migrate_system_directory_menu(
+    migrate_directory_menu(
         session=session,
-        system=system,
+        parent=system,
         route_name="Logs",
-        legacy_path="/logs",
-        system_path="/system/logs",
+        legacy_paths=("/logs",),
+        target_path="/system/logs",
         sort=90,
     )
     logs = ensure_menu(
@@ -471,23 +468,23 @@ def seed_menus(*, session: Session) -> list[Menu]:
         permission_code="system:operation-log:list",
         sort=20,
     )
-    migrate_system_directory_menu(
+    migrate_directory_menu(
         session=session,
-        system=system,
+        parent=basic_settings,
         route_name="Files",
-        legacy_path="/files",
-        system_path="/system/files",
-        sort=100,
+        legacy_paths=("/files", "/system/files"),
+        target_path="/basic-settings/files",
+        sort=20,
     )
     files = ensure_menu(
         session=session,
         title="menu.files",
         type="directory",
-        parent_id=system.id,
-        route_path="/system/files",
+        parent_id=basic_settings.id,
+        route_path="/basic-settings/files",
         route_name="Files",
         icon="lucide:folder",
-        sort=100,
+        sort=20,
     )
     if files.component is not None or files.permission_code is not None:
         files.component = None
@@ -499,7 +496,7 @@ def seed_menus(*, session: Session) -> list[Menu]:
         title="menu.fileChannels",
         type="menu",
         parent_id=files.id,
-        route_path="/system/files/channels",
+        route_path="/basic-settings/files/channels",
         route_name="FileChannels",
         component="#/views/files/channels/index.vue",
         icon="lucide:database",
@@ -511,7 +508,7 @@ def seed_menus(*, session: Session) -> list[Menu]:
         title="menu.fileConfig",
         type="menu",
         parent_id=files.id,
-        route_path="/system/files/config",
+        route_path="/basic-settings/files/config",
         route_name="FileConfig",
         component="#/views/files/config/index.vue",
         icon="lucide:settings-2",
@@ -523,7 +520,7 @@ def seed_menus(*, session: Session) -> list[Menu]:
         title="menu.fileList",
         type="menu",
         parent_id=files.id,
-        route_path="/system/files/list",
+        route_path="/basic-settings/files/list",
         route_name="FileList",
         component="#/views/files/index.vue",
         icon="lucide:files",
@@ -725,7 +722,6 @@ def seed_menus(*, session: Session) -> list[Menu]:
         (dictionaries.id, "编辑字典", "system:dict:update", 62),
         (dictionaries.id, "删除字典", "system:dict:delete", 63),
         (system_settings.id, "编辑参数", "system:setting:update", 71),
-        (online_users.id, "强制下线", "system:session:revoke", 81),
         (oauth2_clients.id, "新增OAuth2客户端", "system:oauth2-client:create", 82),
         (oauth2_clients.id, "编辑OAuth2客户端", "system:oauth2-client:update", 83),
         (oauth2_clients.id, "删除OAuth2客户端", "system:oauth2-client:delete", 84),
@@ -806,6 +802,7 @@ def seed_menus(*, session: Session) -> list[Menu]:
     return [
         dashboard,
         system,
+        basic_settings,
         users,
         roles,
         menus,
@@ -813,7 +810,6 @@ def seed_menus(*, session: Session) -> list[Menu]:
         posts,
         dictionaries,
         system_settings,
-        online_users,
         oauth2,
         oauth2_clients,
         oauth2_tokens,
@@ -846,12 +842,29 @@ def seed_menus(*, session: Session) -> list[Menu]:
     ]
 
 
-def remove_code_generation_menus(*, session: Session) -> None:
+def remove_obsolete_menus(*, session: Session) -> None:
+    obsolete_route_paths = {
+        "/system/codegen",
+        "/system/online-users",
+        "/system/operations",
+    }
+    obsolete_permission_prefixes = (
+        "system:api-log:",
+        "system:codegen:",
+        "system:exception-log:",
+        "system:scheduled-task:",
+        "system:scheduled-task-log:",
+        "system:session:",
+        "system:translation:",
+    )
     obsolete_menus = [
         menu
         for menu in session.exec(select(Menu)).all()
-        if menu.route_path == "/system/codegen"
-        or (menu.permission_code or "").startswith("system:codegen:")
+        if menu.route_path in obsolete_route_paths
+        or (menu.route_path or "").startswith("/system/operations/")
+        or (menu.component or "").startswith("#/views/operations/")
+        or (menu.component or "").startswith("#/views/system/online-users/")
+        or (menu.permission_code or "").startswith(obsolete_permission_prefixes)
     ]
     if not obsolete_menus:
         return
@@ -862,44 +875,42 @@ def remove_code_generation_menus(*, session: Session) -> None:
             session.delete(role_menu)
     session.flush()
 
-    child_menus = [
-        menu for menu in obsolete_menus if menu.parent_id in obsolete_menu_ids
-    ]
-    for menu in child_menus:
-        session.delete(menu)
-    if child_menus:
+    remaining = {menu.id: menu for menu in obsolete_menus}
+    while remaining:
+        parent_ids = {
+            menu.parent_id for menu in remaining.values() if menu.parent_id in remaining
+        }
+        leaves = [menu for menu_id, menu in remaining.items() if menu_id not in parent_ids]
+        for menu in leaves:
+            session.delete(menu)
+            remaining.pop(menu.id)
         session.flush()
 
-    for menu in obsolete_menus:
-        if menu not in child_menus:
-            session.delete(menu)
-    session.flush()
 
-
-def migrate_system_directory_menu(
+def migrate_directory_menu(
     *,
     session: Session,
-    system: Menu,
+    parent: Menu,
     route_name: str,
-    legacy_path: str,
-    system_path: str,
+    legacy_paths: tuple[str, ...],
+    target_path: str,
     sort: int,
 ) -> None:
     legacy_menu = session.exec(
         select(Menu).where(
             Menu.route_name == route_name,
-            Menu.route_path == legacy_path,
+            Menu.route_path.in_(legacy_paths),
         )
     ).first()
     if not legacy_menu:
         return
 
-    system_menu = session.exec(
-        select(Menu).where(Menu.route_path == system_path)
+    target_menu = session.exec(
+        select(Menu).where(Menu.route_path == target_path)
     ).first()
-    if not system_menu:
-        legacy_menu.parent_id = system.id
-        legacy_menu.route_path = system_path
+    if not target_menu:
+        legacy_menu.parent_id = parent.id
+        legacy_menu.route_path = target_path
         legacy_menu.sort = sort
         legacy_menu.updated_at = get_datetime_utc()
         session.add(legacy_menu)
@@ -912,11 +923,11 @@ def migrate_system_directory_menu(
         target_mapping = session.exec(
             select(RoleMenu).where(
                 RoleMenu.role_id == role_menu.role_id,
-                RoleMenu.menu_id == system_menu.id,
+                RoleMenu.menu_id == target_menu.id,
             )
         ).first()
         if not target_mapping:
-            session.add(RoleMenu(role_id=role_menu.role_id, menu_id=system_menu.id))
+            session.add(RoleMenu(role_id=role_menu.role_id, menu_id=target_menu.id))
         session.delete(role_menu)
     session.flush()
     session.delete(legacy_menu)

@@ -10,6 +10,7 @@ from app.api.deps import (
     normalize_pagination,
     require_permission,
 )
+from app.core.cache import CacheNamespace, redis_cache
 from app.models import (
     Menu,
     MenuCreate,
@@ -88,6 +89,16 @@ def read_menus(
 
 @router.get("/me", response_model=list[MenuPublic])
 def read_my_menus(session: SessionDep, current_user: CurrentUser) -> Any:
+    cache_subject = "superuser" if current_user.is_superuser else current_user.id
+    cache_key = redis_cache.build_versioned_key(
+        CacheNamespace.RBAC,
+        "menus",
+        cache_subject,
+    )
+    cached_menus = redis_cache.get_json(cache_key)
+    if cached_menus is not None:
+        return [MenuPublic.model_validate(menu) for menu in cached_menus]
+
     if current_user.is_superuser:
         menus = session.exec(
             select(Menu)
@@ -108,11 +119,26 @@ def read_my_menus(session: SessionDep, current_user: CurrentUser) -> Any:
             )
             .order_by(col(Menu.sort), col(Menu.created_at))
         ).all()
-    return [MenuPublic.model_validate(menu) for menu in menus]
+    menus_public = [MenuPublic.model_validate(menu) for menu in menus]
+    redis_cache.set_json(
+        cache_key,
+        [menu.model_dump(mode="json") for menu in menus_public],
+    )
+    return menus_public
 
 
 @router.get("/permissions/me", response_model=list[str])
 def read_my_permissions(session: SessionDep, current_user: CurrentUser) -> Any:
+    cache_subject = "superuser" if current_user.is_superuser else current_user.id
+    cache_key = redis_cache.build_versioned_key(
+        CacheNamespace.RBAC,
+        "permissions",
+        cache_subject,
+    )
+    cached_permissions = redis_cache.get_json(cache_key)
+    if cached_permissions is not None:
+        return [str(permission) for permission in cached_permissions]
+
     if current_user.is_superuser:
         permissions = session.exec(
             select(Menu.permission_code).where(
@@ -132,7 +158,9 @@ def read_my_permissions(session: SessionDep, current_user: CurrentUser) -> Any:
                 Role.is_active,
             )
         ).all()
-    return sorted({permission for permission in permissions if permission})
+    resolved_permissions = sorted({permission for permission in permissions if permission})
+    redis_cache.set_json(cache_key, resolved_permissions)
+    return resolved_permissions
 
 
 @router.post(
@@ -154,6 +182,7 @@ def create_menu(*, session: SessionDep, menu_in: MenuCreate) -> Any:
     session.add(menu)
     session.commit()
     session.refresh(menu)
+    redis_cache.bump_namespace(CacheNamespace.RBAC)
     return menu
 
 
@@ -190,6 +219,7 @@ def update_menu(
     session.add(menu)
     session.commit()
     session.refresh(menu)
+    redis_cache.bump_namespace(CacheNamespace.RBAC)
     return menu
 
 
@@ -210,4 +240,5 @@ def delete_menu(*, session: SessionDep, menu_id: uuid.UUID) -> Response:
     session.exec(delete(RoleMenu).where(RoleMenu.menu_id == menu_id))
     session.delete(menu)
     session.commit()
+    redis_cache.bump_namespace(CacheNamespace.RBAC)
     return Response(status_code=204)

@@ -26,6 +26,10 @@ export type SocialClientPayload = Omit<
   'created_at' | 'id' | 'updated_at'
 >;
 
+export type SocialClientUpdatePayload = Partial<SocialClientPayload> & {
+  current_password?: string;
+};
+
 export interface SocialUserRecord {
   avatar?: null | string;
   code?: null | string;
@@ -85,7 +89,7 @@ export function createSocialClientApi(data: SocialClientPayload) {
 
 export function updateSocialClientApi(
   clientId: string,
-  data: Partial<SocialClientPayload>,
+  data: SocialClientUpdatePayload,
 ) {
   return requestClient.request<SocialClientRecord>(
     `/social/clients/${clientId}`,
@@ -106,4 +110,14 @@ export function listSocialUsersApi(params: SocialUserListParams = {}) {
 
 export function getSocialUserApi(userId: string) {
   return requestClient.get<SocialUserRecord>(`/social/users/${userId}`);
+}
+
+export function bindSocialUserApi(socialUserId: string, userId: string) {
+  return requestClient.post<SocialUserRecord>(`/social/users/${socialUserId}/bind`, {
+    user_id: userId,
+  });
+}
+
+export function unbindSocialUserApi(socialUserId: string) {
+  return requestClient.post<SocialUserRecord>(`/social/users/${socialUserId}/unbind`);
 }

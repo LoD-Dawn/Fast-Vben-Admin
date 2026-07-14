@@ -9,7 +9,6 @@ export * from './menu';
 export * from './notices';
 export * from './oauth2';
 export * from './rbac';
-export * from './sessions';
 export * from './site-messages';
 export * from './sms';
 export * from './social';

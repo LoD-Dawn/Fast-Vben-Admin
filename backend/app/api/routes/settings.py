@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import col, func, select
 
 from app.api.deps import SessionDep, normalize_pagination, require_permission
+from app.core.cache import CacheNamespace, redis_cache
 from app.models import (
     SystemSetting,
     SystemSettingPublic,
@@ -63,12 +64,25 @@ def read_settings(
 
 @router.get("/public", response_model=list[SystemSettingPublic])
 def read_public_settings(session: SessionDep) -> Any:
+    cache_key = redis_cache.build_versioned_key(
+        CacheNamespace.PUBLIC_SETTINGS,
+        "all",
+    )
+    cached_settings = redis_cache.get_json(cache_key)
+    if cached_settings is not None:
+        return [SystemSettingPublic.model_validate(setting) for setting in cached_settings]
+
     settings = session.exec(
         select(SystemSetting)
         .where(SystemSetting.is_public)
         .order_by(col(SystemSetting.group), col(SystemSetting.key))
     ).all()
-    return [SystemSettingPublic.model_validate(setting) for setting in settings]
+    public_settings = [SystemSettingPublic.model_validate(setting) for setting in settings]
+    redis_cache.set_json(
+        cache_key,
+        [setting.model_dump(mode="json") for setting in public_settings],
+    )
+    return public_settings
 
 
 @router.patch(
@@ -98,4 +112,5 @@ def update_setting(
     session.add(setting)
     session.commit()
     session.refresh(setting)
+    redis_cache.bump_namespace(CacheNamespace.PUBLIC_SETTINGS)
     return setting

@@ -24,6 +24,8 @@ function normalizeComponent(component?: null | string) {
 /** 兼容数据库中仍使用中文标题的旧菜单数据 */
 const LEGACY_MENU_TITLE_KEYS: Record<string, string> = {
   业务示例: 'menu.items',
+  基础设施: 'menu.infrastructure',
+  基础设置: 'menu.infrastructure',
   任务示例: 'menu.items',
   仪表盘: 'menu.dashboard',
   参数配置: 'menu.systemSettings',
@@ -42,7 +44,6 @@ const LEGACY_MENU_TITLE_KEYS: Record<string, string> = {
   角色管理: 'menu.systemRoles',
   部门管理: 'menu.systemDepartments',
   岗位管理: 'menu.systemPosts',
-  在线用户: 'menu.systemOnlineUsers',
   消息中心: 'menu.messageCenter',
   我的消息: 'menu.messages',
   通知公告: 'menu.notices',

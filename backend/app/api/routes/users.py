@@ -16,7 +16,18 @@ from app.api.deps import (
     require_permission,
     user_has_permission,
 )
+from app.core.cache import CacheNamespace, redis_cache
 from app.core.config import settings
+from app.core.mfa import (
+    build_totp_uri,
+    decrypt_totp_secret,
+    encrypt_totp_secret,
+    generate_recovery_codes,
+    generate_totp_secret,
+    get_recovery_code_count,
+    serialize_recovery_codes,
+    verify_totp_code,
+)
 from app.core.security import get_password_hash, verify_password
 from app.models import (
     Department,
@@ -29,6 +40,11 @@ from app.models import (
     UpdatePassword,
     User,
     UserCreate,
+    UserMfaDisable,
+    UserMfaEnable,
+    UserMfaEnableResult,
+    UserMfaSetup,
+    UserMfaStatus,
     UserPost,
     UserPostUpdate,
     UserPublic,
@@ -106,6 +122,20 @@ def get_user_post_codes(session: SessionDep, user_id: uuid.UUID) -> str:
         .order_by(col(Post.sort), col(Post.created_at))
     ).all()
     return ",".join(post.code for post in posts)
+
+
+def build_user_mfa_status(user: User) -> UserMfaStatus:
+    pending_setup = bool(user.mfa_secret_encrypted and not user.mfa_enabled)
+    return UserMfaStatus(
+        enabled=user.mfa_enabled,
+        pending_setup=pending_setup,
+        method="totp" if user.mfa_enabled else None,
+        confirmed_at=user.mfa_confirmed_at,
+        recovery_codes_remaining=get_recovery_code_count(
+            user.mfa_recovery_code_hashes
+        ),
+    )
+
 
 @router.get(
     "",
@@ -244,6 +274,139 @@ def read_user_me(current_user: CurrentUser) -> Any:
     Get current user.
     """
     return current_user
+
+
+@router.get("/me/mfa", response_model=UserMfaStatus)
+def read_user_mfa_status(current_user: CurrentUser) -> UserMfaStatus:
+    """
+    Get current user's MFA status.
+    """
+    return build_user_mfa_status(current_user)
+
+
+@router.post("/me/mfa/setup", response_model=UserMfaSetup)
+def setup_user_mfa(
+    *, session: SessionDep, current_user: CurrentUser
+) -> UserMfaSetup:
+    """
+    Create or replace current user's pending TOTP setup.
+    """
+    if not settings.MFA_TOTP_ENABLED:
+        raise HTTPException(status_code=404, detail="MFA is disabled")
+    if current_user.mfa_enabled:
+        raise HTTPException(status_code=400, detail="MFA has already been enabled.")
+
+    secret = generate_totp_secret()
+    current_user.mfa_secret_encrypted = encrypt_totp_secret(secret)
+    current_user.mfa_confirmed_at = None
+    current_user.updated_at = get_datetime_utc()
+    session.add(current_user)
+    session.commit()
+
+    return UserMfaSetup(
+        secret=secret,
+        otpauth_uri=build_totp_uri(secret=secret, account_name=current_user.email),
+        issuer=settings.MFA_TOTP_ISSUER,
+        account_name=current_user.email,
+    )
+
+
+@router.post("/me/mfa/enable", response_model=UserMfaEnableResult)
+def enable_user_mfa(
+    *, session: SessionDep, body: UserMfaEnable, current_user: CurrentUser
+) -> UserMfaEnableResult:
+    """
+    Verify TOTP code and enable MFA for current user.
+    """
+    if not settings.MFA_TOTP_ENABLED:
+        raise HTTPException(status_code=404, detail="MFA is disabled")
+    if current_user.mfa_enabled:
+        raise HTTPException(status_code=400, detail="MFA has already been enabled.")
+    if not current_user.mfa_secret_encrypted:
+        raise HTTPException(status_code=400, detail="MFA is not configured.")
+
+    try:
+        secret = decrypt_totp_secret(current_user.mfa_secret_encrypted)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="MFA setup is invalid. Please restart MFA setup.",
+        )
+
+    if not verify_totp_code(secret=secret, code=body.code):
+        raise HTTPException(status_code=400, detail="MFA verification code is invalid.")
+
+    now = get_datetime_utc()
+    recovery_codes = generate_recovery_codes()
+    current_user.mfa_enabled = True
+    current_user.mfa_recovery_code_hashes = serialize_recovery_codes(recovery_codes)
+    current_user.mfa_confirmed_at = now
+    current_user.updated_at = now
+    session.add(current_user)
+    session.commit()
+    return UserMfaEnableResult(
+        message="MFA enabled successfully",
+        recovery_codes=recovery_codes,
+    )
+
+
+@router.post("/me/mfa/disable", response_model=Message)
+def disable_user_mfa(
+    *, session: SessionDep, body: UserMfaDisable, current_user: CurrentUser
+) -> Message:
+    """
+    Disable MFA for current user after verifying password and TOTP code.
+    """
+    if not settings.MFA_TOTP_ENABLED:
+        raise HTTPException(status_code=404, detail="MFA is disabled")
+    if not current_user.mfa_enabled or not current_user.mfa_secret_encrypted:
+        raise HTTPException(status_code=400, detail="MFA is not configured.")
+
+    verified, _ = verify_password(body.current_password, current_user.hashed_password)
+    if not verified:
+        raise HTTPException(status_code=400, detail="Incorrect password")
+
+    try:
+        secret = decrypt_totp_secret(current_user.mfa_secret_encrypted)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="MFA setup is invalid. Please restart MFA setup.",
+        )
+
+    if not verify_totp_code(secret=secret, code=body.code):
+        raise HTTPException(status_code=400, detail="MFA verification code is invalid.")
+
+    current_user.mfa_enabled = False
+    current_user.mfa_secret_encrypted = None
+    current_user.mfa_recovery_code_hashes = None
+    current_user.mfa_confirmed_at = None
+    current_user.updated_at = get_datetime_utc()
+    session.add(current_user)
+    session.commit()
+    return Message(message="MFA disabled successfully")
+
+
+@router.post(
+    "/{user_id}/mfa/reset",
+    dependencies=[Depends(require_permission("system:user:update"))],
+    response_model=Message,
+)
+def reset_user_mfa(session: SessionDep, user_id: uuid.UUID) -> Message:
+    """Reset a user's MFA after an administrator has verified the recovery request."""
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.mfa_enabled = False
+    user.mfa_secret_encrypted = None
+    user.mfa_recovery_code_hashes = None
+    user.mfa_confirmed_at = None
+    user.updated_at = get_datetime_utc()
+    crud.revoke_user_sessions(session=session, user_id=user.id)
+    session.add(user)
+    session.commit()
+    return Message(message="MFA reset successfully")
 
 
 @router.get(
@@ -404,6 +567,8 @@ async def import_users(
             for post in posts:
                 session.add(UserPost(user_id=user.id, post_id=post.id))
             session.commit()
+            if role_codes:
+                redis_cache.bump_namespace(CacheNamespace.RBAC)
             success_count += 1
         except (ValidationError, ValueError) as exc:
             session.rollback()
@@ -485,6 +650,7 @@ def update_user_roles(
     user.updated_at = get_datetime_utc()
     session.add(user)
     session.commit()
+    redis_cache.bump_namespace(CacheNamespace.RBAC)
     return body.role_ids
 
 
@@ -584,6 +750,8 @@ def update_user(
             )
 
     db_user = crud.update_user(session=session, db_user=db_user, user_in=user_in)
+    if user_in.is_superuser is not None:
+        redis_cache.bump_namespace(CacheNamespace.RBAC)
     return db_user
 
 

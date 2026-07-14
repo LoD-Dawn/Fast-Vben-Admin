@@ -51,10 +51,31 @@ class UpdatePassword(SQLModel):
     new_password: str = Field(min_length=8, max_length=128)
 
 
+class UserMfaEnable(SQLModel):
+    code: str = Field(min_length=6, max_length=16)
+
+
+class UserMfaEnableResult(SQLModel):
+    message: str
+    recovery_codes: list[str]
+
+
+class UserMfaDisable(SQLModel):
+    current_password: str = Field(min_length=8, max_length=128)
+    code: str = Field(min_length=6, max_length=16)
+
+
 # Database model, database table inferred from class name
 class User(UserBase, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     hashed_password: str
+    mfa_enabled: bool = Field(default=False, nullable=False)
+    mfa_secret_encrypted: str | None = Field(default=None, max_length=500)
+    mfa_recovery_code_hashes: str | None = Field(default=None, max_length=2000)
+    mfa_confirmed_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore
@@ -78,6 +99,21 @@ class UsersPublic(SQLModel):
     total: int
     page: int
     page_size: int
+
+
+class UserMfaStatus(SQLModel):
+    enabled: bool
+    pending_setup: bool = False
+    method: str | None = None
+    confirmed_at: datetime | None = None
+    recovery_codes_remaining: int = 0
+
+
+class UserMfaSetup(SQLModel):
+    secret: str
+    otpauth_uri: str
+    issuer: str
+    account_name: str
 
 
 class DepartmentBase(SQLModel):
@@ -475,7 +511,7 @@ class SystemSettingsPublic(SQLModel):
 
 class LoginLogBase(SQLModel):
     user_id: uuid.UUID | None = None
-    email: str | None = Field(default=None, max_length=255)
+    email: str | None = Field(default=None, max_length=255, index=True)
     ip: str | None = Field(default=None, max_length=100)
     user_agent: str | None = Field(default=None, max_length=500)
     status: str = Field(max_length=20)
@@ -487,6 +523,7 @@ class LoginLog(LoginLogBase, table=True):
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore
+        index=True,
     )
 
 
@@ -520,25 +557,6 @@ class UserSession(SQLModel, table=True):
     )
     expires_at: datetime = Field(sa_type=DateTime(timezone=True))  # type: ignore
     revoked_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))  # type: ignore
-
-
-class UserSessionPublic(SQLModel):
-    id: uuid.UUID
-    user_id: uuid.UUID
-    email: str
-    full_name: str | None = None
-    ip: str | None = None
-    user_agent: str | None = None
-    created_at: datetime | None = None
-    last_active_at: datetime | None = None
-    expires_at: datetime
-
-
-class UserSessionsPublic(SQLModel):
-    items: list[UserSessionPublic]
-    total: int
-    page: int
-    page_size: int
 
 
 class OAuth2ClientBase(SQLModel):
@@ -578,6 +596,7 @@ class OAuth2ClientCreate(OAuth2ClientBase):
 
 
 class OAuth2ClientUpdate(SQLModel):
+    current_password: str | None = Field(default=None, min_length=8, max_length=128)
     client_id: str | None = Field(default=None, min_length=1, max_length=100)
     client_secret: str | None = Field(default=None, max_length=500)
     name: str | None = Field(default=None, min_length=1, max_length=100)
@@ -611,8 +630,19 @@ class OAuth2ClientsPublic(SQLModel):
 
 class OAuth2AccessToken(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    access_token: str = Field(max_length=500, unique=True, index=True)
+    access_token: str | None = Field(
+        default=None, max_length=500, unique=True, index=True
+    )
     refresh_token: str | None = Field(default=None, max_length=500, index=True)
+    access_token_hash: str | None = Field(
+        default=None, max_length=128, unique=True, index=True
+    )
+    refresh_token_hash: str | None = Field(default=None, max_length=128, index=True)
+    refresh_expires_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    token_family_id: uuid.UUID | None = Field(default=None, index=True)
     user_id: uuid.UUID | None = Field(
         default=None, foreign_key="user.id", index=True, ondelete="SET NULL"
     )
@@ -630,7 +660,7 @@ class OAuth2AccessToken(SQLModel, table=True):
 
 class OAuth2AccessTokenPublic(SQLModel):
     id: uuid.UUID
-    access_token: str
+    access_token: str | None = None
     refresh_token: str | None = None
     user_id: uuid.UUID | None = None
     user_email: str | None = None
@@ -649,6 +679,78 @@ class OAuth2AccessTokensPublic(SQLModel):
     page_size: int
 
 
+class OAuth2AuthorizationCode(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    code_hash: str = Field(max_length=128, unique=True, index=True)
+    client_id: str = Field(max_length=100, index=True)
+    user_id: uuid.UUID = Field(foreign_key="user.id", index=True, ondelete="CASCADE")
+    redirect_uri: str = Field(max_length=1000)
+    scopes: str | None = Field(default=None, max_length=500)
+    code_challenge: str = Field(max_length=128)
+    code_challenge_method: str = Field(default="S256", max_length=10)
+    expires_at: datetime = Field(sa_type=DateTime(timezone=True))  # type: ignore
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    used_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))  # type: ignore
+
+
+class EnterpriseOidcAuthorizationState(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    state_hash: str = Field(max_length=128, unique=True, index=True)
+    code_verifier: str = Field(max_length=128)
+    nonce: str = Field(max_length=128)
+    expires_at: datetime = Field(sa_type=DateTime(timezone=True))  # type: ignore
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    consumed_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))  # type: ignore
+
+
+class EnterpriseOidcIdentity(SQLModel, table=True):
+    __table_args__ = (
+        UniqueConstraint(
+            "provider", "subject", name="uq_enterpriseoidcidentity_provider_subject"
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    provider: str = Field(default="enterprise_oidc", max_length=100)
+    subject: str = Field(max_length=500)
+    user_id: uuid.UUID = Field(foreign_key="user.id", index=True, ondelete="CASCADE")
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    updated_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class EnterpriseOidcLoginTicket(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    ticket_hash: str = Field(max_length=128, unique=True, index=True)
+    user_id: uuid.UUID = Field(foreign_key="user.id", index=True, ondelete="CASCADE")
+    expires_at: datetime = Field(sa_type=DateTime(timezone=True))  # type: ignore
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    consumed_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))  # type: ignore
+
+
+class EnterpriseOidcStatus(SQLModel):
+    enabled: bool
+    login_url: str | None = None
+
+
+class EnterpriseOidcTicketExchange(SQLModel):
+    ticket: str = Field(min_length=32, max_length=500)
+
+
 class SocialClientBase(SQLModel):
     name: str = Field(min_length=1, max_length=100)
     social_type: str = Field(min_length=1, max_length=50, index=True)
@@ -662,7 +764,9 @@ class SocialClientBase(SQLModel):
 
 class SocialClient(SocialClientBase, table=True):
     __table_args__ = (
-        UniqueConstraint("social_type", "user_type", name="uq_socialclient_social_type_user_type"),
+        UniqueConstraint(
+            "social_type", "user_type", name="uq_socialclient_social_type_user_type"
+        ),
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
@@ -681,6 +785,7 @@ class SocialClientCreate(SocialClientBase):
 
 
 class SocialClientUpdate(SQLModel):
+    current_password: str | None = Field(default=None, min_length=8, max_length=128)
     name: str | None = Field(default=None, min_length=1, max_length=100)
     social_type: str | None = Field(default=None, min_length=1, max_length=50)
     user_type: str | None = Field(default=None, max_length=50)
@@ -706,7 +811,9 @@ class SocialClientsPublic(SQLModel):
 
 
 class SocialUser(SQLModel, table=True):
-    __table_args__ = (UniqueConstraint("type", "openid", name="uq_socialuser_type_openid"),)
+    __table_args__ = (
+        UniqueConstraint("type", "openid", name="uq_socialuser_type_openid"),
+    )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     type: str = Field(max_length=50, index=True)
@@ -762,13 +869,17 @@ class SocialUsersPublic(SQLModel):
     page_size: int
 
 
+class SocialUserBind(SQLModel):
+    user_id: uuid.UUID
+
+
 class OperationLogBase(SQLModel):
-    user_id: uuid.UUID | None = None
+    user_id: uuid.UUID | None = Field(default=None, index=True)
     email: str | None = Field(default=None, max_length=255)
     module: str = Field(max_length=100)
     action: str = Field(max_length=100)
     method: str = Field(max_length=20)
-    path: str = Field(max_length=500)
+    path: str = Field(max_length=500, index=True)
     status_code: int
     duration_ms: int
     ip: str | None = Field(default=None, max_length=100)
@@ -782,6 +893,7 @@ class OperationLog(OperationLogBase, table=True):
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore
+        index=True,
     )
 
 
@@ -807,7 +919,7 @@ class FileAssetBase(SQLModel):
     storage_provider: str = Field(default="local", max_length=50)
     storage_path: str = Field(max_length=500)
     public_url: str | None = Field(default=None, max_length=500)
-    uploader_id: uuid.UUID | None = None
+    uploader_id: uuid.UUID | None = Field(default=None, index=True)
     is_public: bool = False
 
 
@@ -816,6 +928,7 @@ class FileAsset(FileAssetBase, table=True):
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore
+        index=True,
     )
 
 
@@ -990,7 +1103,7 @@ class SmsTemplateBase(SQLModel):
     remark: str | None = Field(default=None, max_length=255)
     api_template_id: str | None = Field(default=None, max_length=100)
     channel_id: uuid.UUID | None = Field(
-        default=None, foreign_key="smschannel.id", ondelete="SET NULL"
+        default=None, foreign_key="smschannel.id", ondelete="SET NULL", index=True
     )
     channel_code: str | None = Field(default=None, max_length=100)
     is_active: bool = True
@@ -1069,10 +1182,11 @@ class SmsLog(SQLModel, table=True):
     sent_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore
+        index=True,
     )
     api_send_code: str | None = Field(default=None, max_length=100)
     api_send_message: str | None = Field(default=None, max_length=1000)
-    api_request_id: str | None = Field(default=None, max_length=100)
+    api_request_id: str | None = Field(default=None, max_length=100, index=True)
     api_serial_no: str | None = Field(default=None, max_length=100)
     receive_status: str = Field(default="pending", max_length=20)
     received_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))  # type: ignore
@@ -1081,6 +1195,7 @@ class SmsLog(SQLModel, table=True):
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore
+        index=True,
     )
 
 
@@ -1180,7 +1295,7 @@ class MailTemplateBase(SQLModel):
     name: str = Field(min_length=1, max_length=100)
     code: str = Field(min_length=1, max_length=100, unique=True, index=True)
     account_id: uuid.UUID | None = Field(
-        default=None, foreign_key="mailaccount.id", ondelete="SET NULL"
+        default=None, foreign_key="mailaccount.id", ondelete="SET NULL", index=True
     )
     nickname: str | None = Field(default=None, max_length=100)
     title: str = Field(min_length=1, max_length=255)
@@ -1257,13 +1372,18 @@ class MailLog(SQLModel, table=True):
     content: str = Field(max_length=20_000)
     template_params: str | None = Field(default=None, max_length=4000)
     send_status: str = Field(default="pending", max_length=20)
-    sent_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))  # type: ignore
+    sent_at: datetime | None = Field(  # type: ignore
+        default=None,
+        sa_type=DateTime(timezone=True),
+        index=True,
+    )
     message_id: str | None = Field(default=None, max_length=255)
     send_code: str | None = Field(default=None, max_length=100)
     send_message: str | None = Field(default=None, max_length=2000)
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore
+        index=True,
     )
 
 
@@ -1301,8 +1421,12 @@ class NoticeBase(SQLModel):
     content: str = Field(min_length=1, max_length=10000)
     type: str = Field(default="notice", max_length=50)
     priority: int = 0
-    status: str = Field(default="draft", max_length=20)
-    published_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))  # type: ignore
+    status: str = Field(default="draft", max_length=20, index=True)
+    published_at: datetime | None = Field(  # type: ignore
+        default=None,
+        sa_type=DateTime(timezone=True),
+        index=True,
+    )
 
 
 class NoticeCreate(SQLModel):
@@ -1328,6 +1452,7 @@ class Notice(NoticeBase, table=True):
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore
+        index=True,
     )
     updated_at: datetime | None = Field(
         default_factory=get_datetime_utc,
@@ -1352,12 +1477,15 @@ class NoticesPublic(SQLModel):
 class UserMessageBase(SQLModel):
     user_id: uuid.UUID = Field(foreign_key="user.id", index=True, ondelete="CASCADE")
     notice_id: uuid.UUID | None = Field(
-        default=None, foreign_key="notice.id", ondelete="SET NULL"
+        default=None, foreign_key="notice.id", ondelete="SET NULL", index=True
     )
     template_id: uuid.UUID | None = Field(
-        default=None, foreign_key="sitemessagetemplate.id", ondelete="SET NULL"
+        default=None,
+        foreign_key="sitemessagetemplate.id",
+        ondelete="SET NULL",
+        index=True,
     )
-    template_code: str | None = Field(default=None, max_length=100)
+    template_code: str | None = Field(default=None, max_length=100, index=True)
     template_name: str | None = Field(default=None, max_length=100)
     sender_name: str | None = Field(default=None, max_length=100)
     template_params: str | None = Field(default=None, max_length=4000)
@@ -1373,6 +1501,7 @@ class UserMessage(UserMessageBase, table=True):
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore
+        index=True,
     )
 
 
@@ -1557,6 +1686,12 @@ class Token(SQLModel):
     token_type: str = "bearer"
 
 
+class LoginCaptchaChallenge(SQLModel):
+    captcha_id: str
+    challenge_text: str
+    expires_in: int
+
+
 # Contents of JWT token
 class TokenPayload(SQLModel):
     sub: str | None = None
@@ -1566,3 +1701,17 @@ class TokenPayload(SQLModel):
 class NewPassword(SQLModel):
     token: str
     new_password: str = Field(min_length=8, max_length=128)
+
+
+class HealthDependencyStatus(SQLModel):
+    status: str
+    enabled: bool = True
+    degraded: bool = False
+    available: bool | None = None
+
+
+class HealthStatus(SQLModel):
+    ok: bool
+    degraded: bool = False
+    database: HealthDependencyStatus
+    redis: HealthDependencyStatus

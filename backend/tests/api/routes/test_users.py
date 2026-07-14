@@ -1,11 +1,13 @@
 import uuid
 from unittest.mock import patch
 
+import pyotp
 from fastapi.testclient import TestClient
 from sqlmodel import Session, delete, select
 
 from app import crud
 from app.core.config import settings
+from app.core.mfa import encrypt_totp_secret, serialize_recovery_codes
 from app.core.security import verify_password
 from app.models import Post, User, UserCreate, UserPost
 from tests.utils.user import create_random_user, user_authentication_headers
@@ -32,6 +34,144 @@ def test_get_users_normal_user_me(
     assert current_user["is_active"] is True
     assert current_user["is_superuser"] is False
     assert current_user["email"] == settings.EMAIL_TEST_USER
+
+
+def test_current_user_mfa_lifecycle(
+    client: TestClient, superuser_token_headers: dict[str, str]
+) -> None:
+    status_response = client.get(
+        f"{settings.API_V1_STR}/users/me/mfa",
+        headers=superuser_token_headers,
+    )
+    assert status_response.status_code == 200
+    assert status_response.json()["enabled"] is False
+
+    enable_without_setup = client.post(
+        f"{settings.API_V1_STR}/users/me/mfa/enable",
+        headers=superuser_token_headers,
+        json={"code": "123456"},
+    )
+    assert enable_without_setup.status_code == 400
+    assert enable_without_setup.json()["message"] == "MFA is not configured."
+
+    setup_response = client.post(
+        f"{settings.API_V1_STR}/users/me/mfa/setup",
+        headers=superuser_token_headers,
+    )
+    assert setup_response.status_code == 200
+    setup = setup_response.json()
+    assert setup["secret"]
+    assert setup["otpauth_uri"].startswith("otpauth://totp/")
+
+    pending_status = client.get(
+        f"{settings.API_V1_STR}/users/me/mfa",
+        headers=superuser_token_headers,
+    )
+    assert pending_status.status_code == 200
+    assert pending_status.json()["pending_setup"] is True
+
+    enable_response = client.post(
+        f"{settings.API_V1_STR}/users/me/mfa/enable",
+        headers=superuser_token_headers,
+        json={"code": pyotp.TOTP(setup["secret"]).now()},
+    )
+    assert enable_response.status_code == 200
+    assert enable_response.json()["message"] == "MFA enabled successfully"
+    assert len(enable_response.json()["recovery_codes"]) == 10
+
+    enabled_status = client.get(
+        f"{settings.API_V1_STR}/users/me/mfa",
+        headers=superuser_token_headers,
+    )
+    assert enabled_status.status_code == 200
+    assert enabled_status.json()["enabled"] is True
+    assert enabled_status.json()["method"] == "totp"
+    assert enabled_status.json()["recovery_codes_remaining"] == 10
+
+    repeated_setup = client.post(
+        f"{settings.API_V1_STR}/users/me/mfa/setup",
+        headers=superuser_token_headers,
+    )
+    assert repeated_setup.status_code == 400
+    assert repeated_setup.json()["message"] == "MFA has already been enabled."
+
+    wrong_password = client.post(
+        f"{settings.API_V1_STR}/users/me/mfa/disable",
+        headers=superuser_token_headers,
+        json={"current_password": "incorrect", "code": "123456"},
+    )
+    assert wrong_password.status_code == 400
+    assert wrong_password.json()["message"] == "Incorrect password"
+
+    wrong_code = client.post(
+        f"{settings.API_V1_STR}/users/me/mfa/disable",
+        headers=superuser_token_headers,
+        json={
+            "current_password": settings.FIRST_SUPERUSER_PASSWORD,
+            "code": "123456",
+        },
+    )
+    assert wrong_code.status_code == 400
+    assert wrong_code.json()["message"] == "MFA verification code is invalid."
+
+    disable_response = client.post(
+        f"{settings.API_V1_STR}/users/me/mfa/disable",
+        headers=superuser_token_headers,
+        json={
+            "current_password": settings.FIRST_SUPERUSER_PASSWORD,
+            "code": pyotp.TOTP(setup["secret"]).now(),
+        },
+    )
+    assert disable_response.status_code == 200
+    assert disable_response.json()["message"] == "MFA disabled successfully"
+
+    disabled_status = client.get(
+        f"{settings.API_V1_STR}/users/me/mfa",
+        headers=superuser_token_headers,
+    )
+    assert disabled_status.status_code == 200
+    assert disabled_status.json()["enabled"] is False
+    assert disabled_status.json()["pending_setup"] is False
+    assert disabled_status.json()["recovery_codes_remaining"] == 0
+
+
+def test_superuser_can_reset_user_mfa(
+    client: TestClient, db: Session, superuser_token_headers: dict[str, str]
+) -> None:
+    user = crud.create_user(
+        session=db,
+        user_create=UserCreate(email=random_email(), password=random_lower_string()),
+    )
+    user.mfa_enabled = True
+    user.mfa_secret_encrypted = encrypt_totp_secret("JBSWY3DPEHPK3PXP")
+    user.mfa_recovery_code_hashes = serialize_recovery_codes(["RECOVERY-CODE"])
+    db.add(user)
+    db.commit()
+
+    response = client.post(
+        f"{settings.API_V1_STR}/users/{user.id}/mfa/reset",
+        headers=superuser_token_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["message"] == "MFA reset successfully"
+
+    audit_response = client.get(
+        f"{settings.API_V1_STR}/logs/operation",
+        headers=superuser_token_headers,
+        params={"keyword": f"/api/v1/users/{user.id}/mfa/reset", "page_size": 20},
+    )
+    assert audit_response.status_code == 200
+    assert any(
+        log["method"] == "POST"
+        and log["path"] == f"{settings.API_V1_STR}/users/{user.id}/mfa/reset"
+        and log["status_code"] == 200
+        for log in audit_response.json()["items"]
+    )
+
+    db.refresh(user)
+    assert user.mfa_enabled is False
+    assert user.mfa_secret_encrypted is None
+    assert user.mfa_recovery_code_hashes is None
 
 
 def test_create_user_new_email(

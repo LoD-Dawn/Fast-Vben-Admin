@@ -72,6 +72,9 @@ function toPayload(values: Record<string, unknown>) {
     auto_approve_scopes: optionalString(payload.auto_approve_scopes),
     client_id: String(payload.client_id || ''),
     client_secret: optionalString(payload.client_secret),
+    ...(clientId.value && optionalString(payload.client_secret)
+      ? { current_password: optionalString(payload.current_password) }
+      : {}),
     description: optionalString(payload.description),
     is_active:
       typeof payload.is_active === 'boolean' ? payload.is_active : true,

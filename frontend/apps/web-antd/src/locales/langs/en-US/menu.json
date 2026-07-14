@@ -1,12 +1,12 @@
 {
   "dashboard": "Dashboard",
+  "infrastructure": "Infrastructure",
   "system": "System",
   "systemUsers": "Users",
   "systemRoles": "Roles",
   "systemMenus": "Menus",
   "systemDepartments": "Departments",
   "systemPosts": "Posts",
-  "systemOnlineUsers": "Online Users",
   "systemDictionaries": "Dictionaries",
   "systemSettings": "Settings",
   "oauth2": "OAuth 2.0",

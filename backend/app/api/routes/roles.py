@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlmodel import col, delete, func, select
 
 from app.api.deps import SessionDep, normalize_pagination, require_permission
+from app.core.cache import CacheNamespace, redis_cache
 from app.models import (
     Menu,
     Role,
@@ -74,6 +75,7 @@ def create_role(*, session: SessionDep, role_in: RoleCreate) -> Any:
     session.add(role)
     session.commit()
     session.refresh(role)
+    redis_cache.bump_namespace(CacheNamespace.RBAC)
     return role
 
 
@@ -114,6 +116,7 @@ def update_role(
     session.add(role)
     session.commit()
     session.refresh(role)
+    redis_cache.bump_namespace(CacheNamespace.RBAC)
     return role
 
 
@@ -138,6 +141,7 @@ def delete_role(*, session: SessionDep, role_id: uuid.UUID) -> Response:
     session.exec(delete(RoleMenu).where(RoleMenu.role_id == role_id))
     session.delete(role)
     session.commit()
+    redis_cache.bump_namespace(CacheNamespace.RBAC)
     return Response(status_code=204)
 
 
@@ -182,4 +186,5 @@ def update_role_menus(
     role.updated_at = get_datetime_utc()
     session.add(role)
     session.commit()
+    redis_cache.bump_namespace(CacheNamespace.RBAC)
     return body.menu_ids

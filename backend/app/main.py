@@ -8,6 +8,7 @@ from starlette.middleware.cors import CORSMiddleware
 from app.api.main import api_router
 from app.audit import audit_operation_middleware
 from app.core.config import settings
+from app.core.metrics import build_metrics_response, metrics_middleware
 
 
 def custom_generate_unique_id(route: APIRoute) -> str:
@@ -18,6 +19,7 @@ ERROR_CODE_BY_STATUS = {
     400: "BAD_REQUEST",
     401: "AUTH_TOKEN_INVALID",
     403: "USER_FORBIDDEN",
+    429: "RATE_LIMITED",
     404: "NOT_FOUND",
     409: "CONFLICT",
     422: "VALIDATION_ERROR",
@@ -28,6 +30,22 @@ ERROR_CODE_BY_MESSAGE = {
     "Incorrect email or password": "AUTH_INVALID_CREDENTIALS",
     "Inactive user": "USER_INACTIVE",
     "Could not validate credentials": "AUTH_TOKEN_INVALID",
+    "Too many failed login attempts. Please try again later.": "AUTH_RATE_LIMITED",
+    "Captcha verification required.": "AUTH_CAPTCHA_REQUIRED",
+    "Captcha is invalid or expired.": "AUTH_CAPTCHA_INVALID",
+    "MFA verification required.": "AUTH_MFA_REQUIRED",
+    "MFA is disabled": "AUTH_MFA_DISABLED",
+    "MFA is not configured.": "AUTH_MFA_NOT_CONFIGURED",
+    "MFA has already been enabled.": "AUTH_MFA_ALREADY_ENABLED",
+    "MFA verification code is invalid.": "AUTH_MFA_INVALID",
+    "Current password is required": "AUTH_REAUTH_REQUIRED",
+    "MFA setup is invalid. Please restart MFA setup.": "AUTH_MFA_SETUP_INVALID",
+    "Enterprise OIDC is disabled": "AUTH_ENTERPRISE_OIDC_DISABLED",
+    "Enterprise OIDC is not configured": "AUTH_ENTERPRISE_OIDC_NOT_CONFIGURED",
+    "Enterprise OIDC state is invalid or expired": "AUTH_ENTERPRISE_OIDC_STATE_INVALID",
+    "Enterprise OIDC login ticket is invalid or expired": "AUTH_ENTERPRISE_OIDC_TICKET_INVALID",
+    "Enterprise OIDC identity is not linked to an active local user": "AUTH_ENTERPRISE_OIDC_USER_INVALID",
+    "Enterprise OIDC identity token is invalid": "AUTH_ENTERPRISE_OIDC_TOKEN_INVALID",
     "User not found": "USER_NOT_FOUND",
     "Not enough permissions": "ITEM_FORBIDDEN",
     "The user doesn't have enough privileges": "USER_FORBIDDEN",
@@ -57,6 +75,7 @@ app = FastAPI(
 )
 
 app.middleware("http")(audit_operation_middleware)
+app.middleware("http")(metrics_middleware)
 
 
 @app.exception_handler(HTTPException)
@@ -97,3 +116,14 @@ if settings.all_cors_origins:
     )
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
+
+
+@app.get("/metrics", include_in_schema=False, tags=["metrics"])
+def read_metrics(request: Request):
+    if not settings.METRICS_ENABLED:
+        raise HTTPException(status_code=404, detail="Metrics are disabled")
+    if settings.METRICS_AUTH_TOKEN:
+        expected_authorization = f"Bearer {settings.METRICS_AUTH_TOKEN}"
+        if request.headers.get("authorization") != expected_authorization:
+            raise HTTPException(status_code=401, detail="Metrics authentication failed")
+    return build_metrics_response()

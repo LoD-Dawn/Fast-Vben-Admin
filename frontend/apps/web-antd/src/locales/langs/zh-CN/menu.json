@@ -1,12 +1,12 @@
 {
   "dashboard": "仪表盘",
+  "infrastructure": "基础设施",
   "system": "系统管理",
   "systemUsers": "用户管理",
   "systemRoles": "角色管理",
   "systemMenus": "菜单管理",
   "systemDepartments": "部门管理",
   "systemPosts": "岗位管理",
-  "systemOnlineUsers": "在线用户",
   "systemDictionaries": "字典管理",
   "systemSettings": "参数配置",
   "oauth2": "OAuth 2.0",

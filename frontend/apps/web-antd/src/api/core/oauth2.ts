@@ -33,6 +33,10 @@ export type OAuth2ClientPayload = Omit<
   'created_at' | 'id' | 'updated_at'
 >;
 
+export type OAuth2ClientUpdatePayload = Partial<OAuth2ClientPayload> & {
+  current_password?: string;
+};
+
 export interface OAuth2TokenRecord {
   access_token: string;
   client_id: string;
@@ -84,7 +88,7 @@ export function createOAuth2ClientApi(data: OAuth2ClientPayload) {
 
 export function updateOAuth2ClientApi(
   clientId: string,
-  data: Partial<OAuth2ClientPayload>,
+  data: OAuth2ClientUpdatePayload,
 ) {
   return requestClient.request<OAuth2ClientRecord>(
     `/oauth2/clients/${clientId}`,

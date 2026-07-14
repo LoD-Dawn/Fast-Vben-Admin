@@ -10,7 +10,7 @@
 | 参考项目 | `参考项目/LZ-litchi`、`参考项目/LZ-litchi-ui-admin-vben`、当前仓库实现 |
 | 项目阶段 | v1.0 技术收口 |
 | 目标版本 | v1.0.0 |
-| 更新日期 | 2026-07-09 |
+| 更新日期 | 2026-07-14 |
 | 目标读者 | 后端开发、前端开发、测试、运维、项目维护者 |
 
 ## 2. 文档目标
@@ -24,7 +24,7 @@
 - 前端如何消费 OpenAPI、动态菜单、权限码和业务接口。
 - 初始化数据如何做到可重复、可演进、可验证。
 - 登录、RBAC、菜单、部门、字典、参数、日志、文件、通知、Items 如何闭环。
-- 如何为 Litchi 中的岗位、在线用户、代码生成、对象存储、定时任务、国际化、OAuth2、多租户等后续能力预留扩展点。
+- 如何为 Litchi 中的岗位、代码生成、对象存储、OAuth2、多租户等后续能力预留扩展点。
 
 ## 3. 技术定位
 
@@ -47,12 +47,12 @@ v1.0 技术重点：
 - 完成登录认证、用户、角色、菜单、部门、字典、参数、日志、文件、通知、站内消息、仪表盘、Items 示例模块的技术闭环。
 - 所有管理接口通过后端权限依赖校验，前端菜单和按钮显隐只做体验优化。
 - 默认数据包含超级管理员、默认部门、内置角色、菜单、按钮权限、字典、系统参数。
-- OpenAPI schema 可生成前端类型，前端手写 API wrapper 与生成类型保持一致。
+- OpenAPI schema 可生成前端类型，前端手写 API wrapper 与生成类型保持一致，并在 CI 中校验生成漂移。
 - 后端列表接口统一分页响应：`items/total/page/page_size`。
 - 错误响应和 HTTP 状态码稳定，避免前端逐接口特判。
 - 文件上传支持大小限制、扩展名白名单、hash 记录、本地存储和未来对象存储扩展点。
 - 登录日志和操作日志覆盖关键安全、审计和排错场景。
-- 后端核心测试、前端构建、关键 E2E、Docker Compose 最小部署可验证。
+- 后端核心测试、前端构建、关键 E2E、OpenAPI 生成校验已纳入发布门禁，Docker Compose 最小部署保留独立验证路径。
 
 ### 4.2 v1.0 非目标
 
@@ -98,7 +98,7 @@ flowchart LR
 | Mail | SMTP / Mailcatcher | 重置密码、测试邮件 |
 | Static Server | Nginx | 生产环境前端静态资源服务 |
 | Adminer | Adminer | 本地数据库管理 |
-| CI | GitHub Actions | 测试、构建、质量检查 |
+| CI | GitHub Actions | 后端 lint/test、前端 typecheck/build、Playwright E2E、OpenAPI 漂移检查 |
 
 ### 5.3 请求链路
 
@@ -503,7 +503,7 @@ app/models/
 
 | 模块 | 路径 | 说明 |
 | --- | --- | --- |
-| 登录 | `/login/*` | 登录、测试 token、找回密码、重置密码 |
+| 登录 | `/login/*` | 登录、企业 OIDC、测试 token、找回密码、重置密码 |
 | 用户 | `/users` | 当前用户、用户管理、用户角色 |
 | 角色 | `/roles` | 角色 CRUD、角色菜单 |
 | 菜单 | `/menus` | 菜单 CRUD、当前用户菜单、权限码 |
@@ -654,7 +654,7 @@ v1.0 Items 模块提供导入导出范例。
 | 超级管理员 | `FIRST_SUPERUSER` |
 | 部门 | `headquarters` / 总部 |
 | 角色 | `super_admin`、`admin`、`user` |
-| 菜单 | dashboard、system、logs、files、notices、messages、items |
+| 菜单 | dashboard、system、basic-settings、items，以及其下的日志、消息中心、文件和参数子菜单 |
 | 按钮权限 | 用户、角色、菜单、部门、字典、参数、文件、公告、Items 的 create/update/delete |
 | 字典 | `user_status`、`yes_no`、`business_status` |
 | 参数 | `system.name`、`system.default_page_size`、`auth.allow_register`、`upload.max_size_mb` |
@@ -664,7 +664,7 @@ v1.0 Items 模块提供导入导出范例。
 | 角色 | 权限策略 |
 | --- | --- |
 | `super_admin` | 绑定全部菜单和按钮权限，且用户 `is_superuser=True` 仍绕过权限 |
-| `admin` | 绑定系统管理、日志、文件、公告、仪表盘、消息等后台管理权限 |
+| `admin` | 绑定系统管理、基础设施、审计日志、消息中心、仪表盘等后台管理权限 |
 | `user` | 绑定仪表盘、消息和 Items 示例业务权限 |
 
 ### 11.4 初始化验收
@@ -708,11 +708,9 @@ frontend/apps/web-antd/src/
   router/
     routes/
       modules/
+        basic-settings.ts
         dashboard.ts
         system.ts
-        logs.ts
-        files.ts
-        notices.ts
         items.ts
         account.ts
   views/
@@ -738,6 +736,7 @@ frontend/apps/web-antd/src/
 
 - 本地保留核心兜底路由，例如登录、403、404、500、个人中心。
 - 系统业务菜单优先来自后端 `/menus/me`。
+- 一级菜单当前包含 `dashboard`、`system`、`basic-settings`、`items`；其中参数配置与文件管理归入 `basic-settings`。
 - 后端返回的 `component` 必须映射到前端实际页面。
 - 菜单 `title` 可使用 i18n key，例如 `menu.systemUsers`。
 - `authority` 使用权限码数组。
@@ -759,13 +758,6 @@ frontend/apps/web-antd/src/
 ### 12.6 国际化
 
 v1.0 前端保留静态 i18n 文件。菜单标题可以使用 i18n key。
-
-v1.3 再考虑参考 Litchi 的在线国际化：
-
-- locale 管理。
-- i18n key 管理。
-- message 管理。
-- 导入导出翻译。
 
 ## 13. 模块技术设计
 
@@ -1206,11 +1198,9 @@ v1.0 基础能力：
 
 v1.x 增强：
 
-- API 访问日志和异常日志拆分。
 - Sentry。
 - Prometheus metrics。
 - Redis 监控。
-- 任务调度日志。
 
 ## 20. 扩展路线技术预留
 
@@ -1223,16 +1213,7 @@ v1.x 增强：
 
 与部门、用户关联，不破坏现有 `department_id`。
 
-### 20.2 在线用户
-
-可新增：
-
-- `UserSession`
-- token jti。
-- 登录设备、IP、UA、最后活跃时间。
-- 强制下线黑名单。
-
-### 20.3 代码生成
+### 20.2 代码生成
 
 v1.2 目标：
 
@@ -1242,16 +1223,7 @@ v1.2 目标：
 - 生成 Alembic migration 模板。
 - 生成菜单和权限码种子。
 
-### 20.4 定时任务
-
-候选方案：
-
-- APScheduler：轻量、适合单机。
-- Celery/RQ：适合异步任务和分布式。
-
-v1.3 前需要确定运行模式，避免过早引入 Redis 依赖。
-
-### 20.5 多租户
+### 20.3 多租户
 
 v2.0 前不做。技术预留：
 

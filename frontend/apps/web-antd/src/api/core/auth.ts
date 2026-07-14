@@ -1,4 +1,5 @@
 import type {
+  LoginCaptchaChallenge as FastApiLoginCaptchaChallenge,
   Message,
   NewPassword,
   Token,
@@ -14,6 +15,9 @@ import { getMyPermissionsApi } from './rbac';
 export namespace AuthApi {
   /** 登录接口参数 */
   export interface LoginParams {
+    captcha_code?: string;
+    captcha_id?: string;
+    mfa_code?: string;
     password?: string;
     username?: string;
   }
@@ -24,6 +28,7 @@ export namespace AuthApi {
   }
 
   export type FastApiToken = Token;
+  export type LoginCaptchaChallenge = FastApiLoginCaptchaChallenge;
 
   export type FastApiUser = UserPublic;
 
@@ -39,6 +44,38 @@ export namespace AuthApi {
   export type UpdatePasswordPayload = UpdatePassword;
 
   export type ResetPasswordPayload = NewPassword;
+
+  export interface MfaStatus {
+    confirmed_at?: null | string;
+    enabled: boolean;
+    method?: null | string;
+    pending_setup: boolean;
+    recovery_codes_remaining: number;
+  }
+
+  export interface MfaSetup {
+    account_name: string;
+    issuer: string;
+    otpauth_uri: string;
+    secret: string;
+  }
+
+  export interface EnableMfaPayload {
+    code: string;
+  }
+
+  export interface EnableMfaResult extends MessageResult {
+    recovery_codes: string[];
+  }
+
+  export interface DisableMfaPayload extends EnableMfaPayload {
+    current_password: string;
+  }
+
+  export interface EnterpriseOidcStatus {
+    enabled: boolean;
+    login_url?: null | string;
+  }
 }
 
 /**
@@ -48,6 +85,15 @@ export async function loginApi(data: AuthApi.LoginParams) {
   const formData = new URLSearchParams();
   formData.set('username', data.username ?? '');
   formData.set('password', data.password ?? '');
+  if (data.captcha_id) {
+    formData.set('captcha_id', data.captcha_id);
+  }
+  if (data.captcha_code) {
+    formData.set('captcha_code', data.captcha_code);
+  }
+  if (data.mfa_code) {
+    formData.set('mfa_code', data.mfa_code);
+  }
 
   const token = await requestClient.post<AuthApi.FastApiToken>(
     '/login/access-token',
@@ -98,10 +144,48 @@ export function updateCurrentPasswordApi(data: AuthApi.UpdatePasswordPayload) {
   });
 }
 
+export function getCurrentUserMfaStatusApi() {
+  return requestClient.get<AuthApi.MfaStatus>('/users/me/mfa');
+}
+
+export function setupCurrentUserMfaApi() {
+  return requestClient.post<AuthApi.MfaSetup>('/users/me/mfa/setup');
+}
+
+export function enableCurrentUserMfaApi(data: AuthApi.EnableMfaPayload) {
+  return requestClient.post<AuthApi.EnableMfaResult>('/users/me/mfa/enable', data);
+}
+
+export function disableCurrentUserMfaApi(data: AuthApi.DisableMfaPayload) {
+  return requestClient.post<AuthApi.MessageResult>('/users/me/mfa/disable', data);
+}
+
 export function requestPasswordRecoveryApi(email: string) {
   return requestClient.post<AuthApi.MessageResult>(
     `/password-recovery/${encodeURIComponent(email)}`,
   );
+}
+
+export function getLoginCaptchaApi(username: string) {
+  return requestClient.get<AuthApi.LoginCaptchaChallenge>('/login/captcha', {
+    params: {
+      username,
+    },
+  });
+}
+
+export function getEnterpriseOidcStatusApi() {
+  return requestClient.get<AuthApi.EnterpriseOidcStatus>(
+    '/login/enterprise-oidc/status',
+  );
+}
+
+export async function exchangeEnterpriseOidcTicketApi(ticket: string) {
+  const token = await requestClient.post<AuthApi.FastApiToken>(
+    '/login/enterprise-oidc/exchange',
+    { ticket },
+  );
+  return { accessToken: token.access_token };
 }
 
 export function resetPasswordApi(data: AuthApi.ResetPasswordPayload) {

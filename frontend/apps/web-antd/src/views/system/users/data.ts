@@ -177,6 +177,11 @@ export function useColumns(
             auth: 'system:user:delete',
             code: 'delete',
           },
+          {
+            auth: 'system:user:update',
+            code: 'reset-mfa',
+            text: '重置 MFA',
+          },
         ],
       },
       field: 'operation',

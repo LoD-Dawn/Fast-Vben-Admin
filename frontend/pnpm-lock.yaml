@@ -700,6 +700,9 @@ importers:
       '@vueuse/core':
         specifier: 'catalog:'
         version: 14.3.0(vue@3.5.38(typescript@6.0.3))
+      '@vueuse/integrations':
+        specifier: 'catalog:'
+        version: 14.3.0(async-validator@4.2.5)(axios@1.18.0)(focus-trap@8.2.1)(nprogress@0.2.0)(qrcode@1.5.4)(sortablejs@1.15.7)(vue@3.5.38(typescript@6.0.3))
       ant-design-vue:
         specifier: 'catalog:'
         version: 4.2.6(vue@3.5.38(typescript@6.0.3))

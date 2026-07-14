@@ -4,7 +4,14 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import col, func, or_, select
 
-from app.api.deps import SessionDep, normalize_pagination, require_permission
+from app.api.deps import (
+    CurrentUser,
+    SessionDep,
+    normalize_pagination,
+    require_permission,
+)
+from app.core.mfa import encrypt_secret
+from app.core.security import verify_password
 from app.models import (
     SocialClient,
     SocialClientCreate,
@@ -12,6 +19,7 @@ from app.models import (
     SocialClientsPublic,
     SocialClientUpdate,
     SocialUser,
+    SocialUserBind,
     SocialUserPublic,
     SocialUsersPublic,
     User,
@@ -127,6 +135,8 @@ def create_social_client(
         user_type=client_in.user_type,
     )
     client = SocialClient.model_validate(client_in)
+    if client.client_secret:
+        client.client_secret = encrypt_secret(client.client_secret)
     session.add(client)
     session.commit()
     session.refresh(client)
@@ -153,6 +163,7 @@ def read_social_client(session: SessionDep, client_id: uuid.UUID) -> SocialClien
 def update_social_client(
     *,
     session: SessionDep,
+    current_user: CurrentUser,
     client_id: uuid.UUID,
     client_in: SocialClientUpdate,
 ) -> SocialClientPublic:
@@ -161,6 +172,16 @@ def update_social_client(
         raise HTTPException(status_code=404, detail="Social client not found")
 
     update_data = client_in.model_dump(exclude_unset=True)
+    current_password = update_data.pop("current_password", None)
+    if update_data.get("client_secret") == "******":
+        update_data.pop("client_secret")
+    elif update_data.get("client_secret"):
+        if not current_password:
+            raise HTTPException(status_code=400, detail="Current password is required")
+        verified, _ = verify_password(current_password, current_user.hashed_password)
+        if not verified:
+            raise HTTPException(status_code=400, detail="Incorrect password")
+        update_data["client_secret"] = encrypt_secret(update_data["client_secret"])
     next_social_type = update_data.get("social_type", client.social_type)
     next_user_type = update_data.get("user_type", client.user_type)
     if (
@@ -173,9 +194,6 @@ def update_social_client(
             user_type=next_user_type,
             exclude_id=client.id,
         )
-    if update_data.get("client_secret") == "******":
-        update_data.pop("client_secret")
-
     client.sqlmodel_update(update_data)
     client.updated_at = get_datetime_utc()
     session.add(client)
@@ -266,4 +284,57 @@ def read_social_user(
     social_user = session.get(SocialUser, social_user_id)
     if not social_user:
         raise HTTPException(status_code=404, detail="Social user not found")
+    return to_social_user_public(session=session, social_user=social_user)
+
+
+@router.post(
+    "/users/{social_user_id}/bind",
+    dependencies=[Depends(require_permission("system:social-user:list"))],
+    response_model=SocialUserPublic,
+)
+def bind_social_user(
+    *, session: SessionDep, social_user_id: uuid.UUID, body: SocialUserBind
+) -> SocialUserPublic:
+    social_user = session.get(SocialUser, social_user_id)
+    if not social_user:
+        raise HTTPException(status_code=404, detail="Social user not found")
+    user = session.get(User, body.user_id)
+    if not user or not user.is_active:
+        raise HTTPException(status_code=400, detail="Target user is invalid")
+    conflict = session.exec(
+        select(SocialUser).where(
+            SocialUser.type == social_user.type,
+            SocialUser.user_id == body.user_id,
+            SocialUser.id != social_user.id,
+        )
+    ).first()
+    if conflict:
+        raise HTTPException(
+            status_code=409,
+            detail="Target user already has a social account for this platform",
+        )
+    social_user.user_id = user.id
+    social_user.updated_at = get_datetime_utc()
+    session.add(social_user)
+    session.commit()
+    session.refresh(social_user)
+    return to_social_user_public(session=session, social_user=social_user)
+
+
+@router.post(
+    "/users/{social_user_id}/unbind",
+    dependencies=[Depends(require_permission("system:social-user:list"))],
+    response_model=SocialUserPublic,
+)
+def unbind_social_user(
+    *, session: SessionDep, social_user_id: uuid.UUID
+) -> SocialUserPublic:
+    social_user = session.get(SocialUser, social_user_id)
+    if not social_user:
+        raise HTTPException(status_code=404, detail="Social user not found")
+    social_user.user_id = None
+    social_user.updated_at = get_datetime_utc()
+    session.add(social_user)
+    session.commit()
+    session.refresh(social_user)
     return to_social_user_public(session=session, social_user=social_user)

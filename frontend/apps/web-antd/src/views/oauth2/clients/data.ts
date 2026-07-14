@@ -64,6 +64,22 @@ export function useFormSchema(): VbenFormSchema[] {
       label: '客户端密钥',
     },
     {
+      component: 'InputPassword',
+      componentProps: {
+        autocomplete: 'current-password',
+        placeholder: '修改客户端密钥时必填',
+      },
+      dependencies: {
+        show: (values) =>
+          Boolean(
+            values.client_secret && values.client_secret !== '******',
+          ),
+        triggerFields: ['client_secret'],
+      },
+      fieldName: 'current_password',
+      label: '当前管理员密码',
+    },
+    {
       component: 'Input',
       fieldName: 'name',
       label: '应用名称',

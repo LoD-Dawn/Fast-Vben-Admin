@@ -58,23 +58,6 @@
     "createTime": "Created At",
     "operation": "Actions"
   },
-  "onlineUser": {
-    "title": "Online Users",
-    "list": "Online User List",
-    "name": "User",
-    "email": "Email",
-    "fullName": "Full Name",
-    "ip": "Login IP",
-    "userAgent": "User Agent",
-    "loginTime": "Login Time",
-    "lastActiveTime": "Last Active At",
-    "expiresAt": "Expires At",
-    "operation": "Actions",
-    "revoke": "Force Logout",
-    "revokeTitle": "Force Logout",
-    "revokeContent": "Force {0} to log out?",
-    "revokeSuccess": "User has been logged out"
-  },
   "menu": {
     "title": "Menu Management",
     "parent": "Parent Menu",

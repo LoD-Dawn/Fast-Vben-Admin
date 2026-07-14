@@ -36,6 +36,9 @@ const [Drawer, drawerApi] = useVbenDrawer({
         values.client_secret && values.client_secret !== '******'
           ? values.client_secret
           : undefined,
+      ...(clientId.value && values.client_secret !== '******' && values.client_secret
+        ? { current_password: values.current_password || undefined }
+        : {}),
       is_active: values.is_active ?? true,
       name: values.name,
       remark: values.remark || undefined,

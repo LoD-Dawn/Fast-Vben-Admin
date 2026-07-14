@@ -16,7 +16,6 @@ from app.api.routes import (
     posts,
     private,
     roles,
-    sessions,
     site_messages,
     sms,
     social,
@@ -38,7 +37,6 @@ api_router.include_router(menus.router)
 api_router.include_router(notices.router)
 api_router.include_router(permissions.router)
 api_router.include_router(posts.router)
-api_router.include_router(sessions.router)
 api_router.include_router(departments.router)
 api_router.include_router(dictionaries.router)
 api_router.include_router(system_settings.router)

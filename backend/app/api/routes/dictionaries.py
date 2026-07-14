@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlmodel import col, func, select
 
 from app.api.deps import SessionDep, normalize_pagination, require_permission
+from app.core.cache import CacheNamespace, redis_cache
 from app.models import (
     DictionaryItem,
     DictionaryItemCreate,
@@ -82,6 +83,7 @@ def create_dictionary_type(
     session.add(type_)
     session.commit()
     session.refresh(type_)
+    redis_cache.bump_namespace(CacheNamespace.DICTIONARY_ITEMS)
     return type_
 
 
@@ -110,6 +112,7 @@ def update_dictionary_type(
     session.add(type_)
     session.commit()
     session.refresh(type_)
+    redis_cache.bump_namespace(CacheNamespace.DICTIONARY_ITEMS)
     return type_
 
 
@@ -131,6 +134,7 @@ def delete_dictionary_type(*, session: SessionDep, type_id: uuid.UUID) -> Respon
 
     session.delete(type_)
     session.commit()
+    redis_cache.bump_namespace(CacheNamespace.DICTIONARY_ITEMS)
     return Response(status_code=204)
 
 
@@ -186,6 +190,14 @@ def read_dictionary_items(
     response_model=list[DictionaryItemPublic],
 )
 def read_dictionary_items_by_code(session: SessionDep, code: str) -> Any:
+    cache_key = redis_cache.build_versioned_key(
+        CacheNamespace.DICTIONARY_ITEMS,
+        code,
+    )
+    cached_items = redis_cache.get_json(cache_key)
+    if cached_items is not None:
+        return [DictionaryItemPublic.model_validate(item) for item in cached_items]
+
     type_ = session.exec(
         select(DictionaryType).where(
             DictionaryType.code == code,
@@ -200,7 +212,12 @@ def read_dictionary_items_by_code(session: SessionDep, code: str) -> Any:
         .where(DictionaryItem.type_id == type_.id, DictionaryItem.is_active)
         .order_by(col(DictionaryItem.sort), col(DictionaryItem.created_at))
     ).all()
-    return [DictionaryItemPublic.model_validate(item) for item in items]
+    public_items = [DictionaryItemPublic.model_validate(item) for item in items]
+    redis_cache.set_json(
+        cache_key,
+        [item.model_dump(mode="json") for item in public_items],
+    )
+    return public_items
 
 
 @router.post(
@@ -228,6 +245,7 @@ def create_dictionary_item(
     session.add(item)
     session.commit()
     session.refresh(item)
+    redis_cache.bump_namespace(CacheNamespace.DICTIONARY_ITEMS)
     return item
 
 
@@ -263,6 +281,7 @@ def update_dictionary_item(
     session.add(item)
     session.commit()
     session.refresh(item)
+    redis_cache.bump_namespace(CacheNamespace.DICTIONARY_ITEMS)
     return item
 
 
@@ -278,4 +297,5 @@ def delete_dictionary_item(*, session: SessionDep, item_id: uuid.UUID) -> Respon
 
     session.delete(item)
     session.commit()
+    redis_cache.bump_namespace(CacheNamespace.DICTIONARY_ITEMS)
     return Response(status_code=204)

@@ -36,6 +36,15 @@ services:
     ports:
       - "8080:8080"
 
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - app-redis-data:/data
+    ports:
+      - "6379:6379"
+
   prestart:
     build:
       context: .
@@ -48,6 +57,7 @@ services:
       - .env
     environment:
       POSTGRES_SERVER: db
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
 
   backend:
     build:
@@ -63,6 +73,7 @@ services:
       - .env
     environment:
       POSTGRES_SERVER: db
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
     volumes:
       - app-uploads:/app/backend/uploads
     healthcheck:
@@ -106,5 +117,6 @@ services:
 
 volumes:
   app-db-data:
+  app-redis-data:
   app-uploads:
   app-minio-data:

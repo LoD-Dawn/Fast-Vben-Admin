@@ -91,12 +91,24 @@ export function useColumns(
             code: 'detail',
             text: '详情',
           },
+          {
+            auth: 'system:social-user:list',
+            code: 'bind',
+            show: (row: SocialUserRecord) => !row.user_id,
+            text: '绑定用户',
+          },
+          {
+            auth: 'system:social-user:list',
+            code: 'unbind',
+            show: (row: SocialUserRecord) => Boolean(row.user_id),
+            text: '解绑用户',
+          },
         ],
       },
       field: 'operation',
       fixed: 'right',
       title: '操作',
-      width: 100,
+      width: 160,
     },
   ];
 }

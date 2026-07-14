@@ -42,6 +42,10 @@ export function deleteUserApi(userId: string) {
   return requestClient.delete<void>(`/users/${userId}`);
 }
 
+export function resetUserMfaApi(userId: string) {
+  return requestClient.post<{ message: string }>(`/users/${userId}/mfa/reset`);
+}
+
 export function importUsersApi(file: File) {
   const formData = new FormData();
   formData.append('file', file);

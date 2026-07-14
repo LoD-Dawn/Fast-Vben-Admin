@@ -18,6 +18,7 @@ import {
   downloadApi,
   listDepartmentsApi,
   listUsersApi,
+  resetUserMfaApi,
   updateUserApi,
   usersExportPath,
   usersImportTemplatePath,
@@ -80,6 +81,24 @@ function onActionClick({ code, row }: OnActionClickParams<UserRecord>) {
       formDrawerApi.setData(row).open();
       break;
     }
+    case 'reset-mfa': {
+      void onResetMfa(row);
+      break;
+    }
+  }
+}
+
+async function onResetMfa(row: UserRecord) {
+  try {
+    await confirmAction(
+      `确认重置用户 ${row.email} 的 MFA 吗？该用户的现有登录会话将失效。`,
+      '重置 MFA',
+    );
+    await resetUserMfaApi(row.id);
+    message.success('MFA 已重置');
+    onRefresh();
+  } catch {
+    // 用户取消或接口失败时由全局错误处理接管
   }
 }
 

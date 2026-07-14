@@ -15,6 +15,7 @@ from app.models import LoginLog, OperationLog, TokenPayload, User
 
 SENSITIVE_PATH_PARTS = (
     "/login/access-token",
+    "/login/enterprise-oidc/exchange",
     "/password-recovery",
     "/reset-password",
 )
