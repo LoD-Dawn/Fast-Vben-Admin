@@ -34,6 +34,22 @@ class DataScope(StrEnum):
     CUSTOM = "custom"
 
 
+class TenantLifecycleStatus(StrEnum):
+    TRIAL = "trial"
+    FORMAL = "formal"
+    FROZEN = "frozen"
+    EXPIRED = "expired"
+    ARCHIVED = "archived"
+
+
+class TenantLifecycleAction(StrEnum):
+    CONVERT_TO_FORMAL = "convert_to_formal"
+    RENEW = "renew"
+    FREEZE = "freeze"
+    UNFREEZE = "unfreeze"
+    ARCHIVE = "archive"
+
+
 class TenantPlanBase(SQLModel):
     code: str = Field(min_length=1, max_length=100, unique=True, index=True)
     name: str = Field(min_length=1, max_length=100)
@@ -63,8 +79,6 @@ class TenantPlanCreate(TenantPlanBase):
     price: float = Field(default=0, ge=0)
     published: int = 0
     order_num: int = Field(default=1, ge=0)
-    subscription_num: int = Field(default=0, ge=0)
-    subscription_total_amount: float = Field(default=0, ge=0)
     remark: str | None = Field(default=None, max_length=500)
 
 
@@ -82,8 +96,6 @@ class TenantPlanUpdate(SQLModel):
     price: float | None = Field(default=None, ge=0)
     published: int | None = None
     order_num: int | None = Field(default=None, ge=0)
-    subscription_num: int | None = Field(default=None, ge=0)
-    subscription_total_amount: float | None = Field(default=None, ge=0)
     remark: str | None = Field(default=None, max_length=500)
 
 
@@ -99,6 +111,7 @@ class TenantPlanPublic(TenantPlanBase):
     subscription_num: int = 0
     subscription_total_amount: float = 0
     remark: str | None = None
+    menu_count: int = 0
 
 
 class TenantPlansPublic(SQLModel):
@@ -226,6 +239,15 @@ class TenantPublic(TenantBase):
     balance_amount: float = 0
     account_count: int | None = None
     current_account_count: int = 0
+    lifecycle_status: TenantLifecycleStatus = TenantLifecycleStatus.FORMAL
+    effective_at: datetime | None = None
+    trial_ends_at: datetime | None = None
+    service_expires_at: datetime | None = None
+    frozen_at: datetime | None = None
+    frozen_reason: str | None = None
+    owner_name: str | None = None
+    customer_source: str | None = None
+    follow_up_notes: str | None = None
 
 
 class TenantCreate(TenantBase):
@@ -240,8 +262,15 @@ class TenantCreate(TenantBase):
     qualifications: str | None = Field(default=None, max_length=500)
     website: str | None = Field(default=None, max_length=255)
     account_count: int | None = Field(default=None, ge=0)
-    username: str | None = Field(default=None, max_length=255)
+    username: EmailStr | None = Field(default=None, max_length=255)
     password: str | None = Field(default=None, min_length=8, max_length=128)
+    lifecycle_status: TenantLifecycleStatus = TenantLifecycleStatus.FORMAL
+    effective_at: datetime | None = None
+    trial_ends_at: datetime | None = None
+    service_expires_at: datetime | None = None
+    owner_name: str | None = Field(default=None, max_length=100)
+    customer_source: str | None = Field(default=None, max_length=100)
+    follow_up_notes: str | None = Field(default=None, max_length=1000)
 
 
 class TenantUpdate(SQLModel):
@@ -259,6 +288,14 @@ class TenantUpdate(SQLModel):
     qualifications: str | None = Field(default=None, max_length=500)
     website: str | None = Field(default=None, max_length=255)
     account_count: int | None = Field(default=None, ge=0)
+    lifecycle_status: TenantLifecycleStatus | None = None
+    effective_at: datetime | None = None
+    trial_ends_at: datetime | None = None
+    service_expires_at: datetime | None = None
+    frozen_reason: str | None = Field(default=None, max_length=500)
+    owner_name: str | None = Field(default=None, max_length=100)
+    customer_source: str | None = Field(default=None, max_length=100)
+    follow_up_notes: str | None = Field(default=None, max_length=1000)
 
 
 class TenantsPublic(SQLModel):
@@ -288,11 +325,27 @@ class TenantUsagePublic(SQLModel):
     storage_bytes: int
 
 
+class TenantLifecycleActionRequest(SQLModel):
+    action: TenantLifecycleAction
+    service_expires_at: datetime | None = None
+    frozen_reason: str | None = Field(default=None, max_length=500)
+
+
+class TenantMenuSyncResult(SQLModel):
+    success_count: int = 0
+    failed_count: int = 0
+    skipped_count: int = 0
+
+
 class TenantProfile(SQLModel, table=True):
     tenant_id: uuid.UUID = Field(
         foreign_key="tenant.id", primary_key=True, ondelete="CASCADE"
     )
-    contact_user_id: uuid.UUID | None = Field(default=None, foreign_key="user.id")
+    contact_user_id: uuid.UUID | None = Field(
+        default=None,
+        foreign_key="user.id",
+        ondelete="SET NULL",
+    )
     contact_name: str | None = Field(default=None, max_length=100)
     contact_mobile: str | None = Field(default=None, max_length=32)
     industry: int | None = None
@@ -305,6 +358,37 @@ class TenantProfile(SQLModel, table=True):
     payment_amount: float = 0
     balance_amount: float = 0
     account_count: int | None = Field(default=None, ge=0)
+    lifecycle_status: TenantLifecycleStatus = Field(
+        default=TenantLifecycleStatus.FORMAL,
+        sa_type=String(32),
+        index=True,
+    )
+    lifecycle_status_before_freeze: TenantLifecycleStatus | None = Field(
+        default=None,
+        sa_type=String(32),
+    )
+    effective_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    trial_ends_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore
+        index=True,
+    )
+    service_expires_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore
+        index=True,
+    )
+    frozen_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    frozen_reason: str | None = Field(default=None, max_length=500)
+    owner_name: str | None = Field(default=None, max_length=100, index=True)
+    customer_source: str | None = Field(default=None, max_length=100, index=True)
+    follow_up_notes: str | None = Field(default=None, max_length=1000)
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore
@@ -1517,7 +1601,22 @@ class OAuth2ClientBase(SQLModel):
 
 
 class OAuth2Client(OAuth2ClientBase, table=True):
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "client_id",
+            name="uq_oauth2client_tenant_client_id",
+        ),
+        UniqueConstraint("id", "tenant_id", name="uq_oauth2client_id_tenant_id"),
+    )
+
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    tenant_id: uuid.UUID = Field(
+        default=DEFAULT_TENANT_ID,
+        foreign_key="tenant.id",
+        index=True,
+        ondelete="CASCADE",
+    )
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore
@@ -1553,6 +1652,7 @@ class OAuth2ClientUpdate(SQLModel):
 
 class OAuth2ClientPublic(OAuth2ClientBase):
     id: uuid.UUID
+    tenant_id: uuid.UUID
     client_secret: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -1566,7 +1666,20 @@ class OAuth2ClientsPublic(SQLModel):
 
 
 class OAuth2AccessToken(SQLModel, table=True):
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["client_id", "tenant_id"],
+            ["oauth2client.client_id", "oauth2client.tenant_id"],
+        ),
+    )
+
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    tenant_id: uuid.UUID = Field(
+        default=DEFAULT_TENANT_ID,
+        foreign_key="tenant.id",
+        index=True,
+        ondelete="CASCADE",
+    )
     access_token: str | None = Field(
         default=None, max_length=500, unique=True, index=True
     )
@@ -1597,6 +1710,7 @@ class OAuth2AccessToken(SQLModel, table=True):
 
 class OAuth2AccessTokenPublic(SQLModel):
     id: uuid.UUID
+    tenant_id: uuid.UUID
     access_token: str | None = None
     refresh_token: str | None = None
     user_id: uuid.UUID | None = None
@@ -1617,7 +1731,20 @@ class OAuth2AccessTokensPublic(SQLModel):
 
 
 class OAuth2AuthorizationCode(SQLModel, table=True):
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["client_id", "tenant_id"],
+            ["oauth2client.client_id", "oauth2client.tenant_id"],
+        ),
+    )
+
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    tenant_id: uuid.UUID = Field(
+        default=DEFAULT_TENANT_ID,
+        foreign_key="tenant.id",
+        index=True,
+        ondelete="CASCADE",
+    )
     code_hash: str = Field(max_length=128, unique=True, index=True)
     client_id: str = Field(max_length=100, index=True)
     user_id: uuid.UUID = Field(foreign_key="user.id", index=True, ondelete="CASCADE")
@@ -1702,11 +1829,21 @@ class SocialClientBase(SQLModel):
 class SocialClient(SocialClientBase, table=True):
     __table_args__ = (
         UniqueConstraint(
-            "social_type", "user_type", name="uq_socialclient_social_type_user_type"
+            "tenant_id",
+            "social_type",
+            "user_type",
+            name="uq_socialclient_tenant_social_type_user_type",
         ),
+        UniqueConstraint("id", "tenant_id", name="uq_socialclient_id_tenant_id"),
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    tenant_id: uuid.UUID = Field(
+        default=DEFAULT_TENANT_ID,
+        foreign_key="tenant.id",
+        index=True,
+        ondelete="CASCADE",
+    )
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore
@@ -1735,6 +1872,7 @@ class SocialClientUpdate(SQLModel):
 
 class SocialClientPublic(SocialClientBase):
     id: uuid.UUID
+    tenant_id: uuid.UUID
     client_secret: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -1749,10 +1887,29 @@ class SocialClientsPublic(SQLModel):
 
 class SocialUser(SQLModel, table=True):
     __table_args__ = (
-        UniqueConstraint("type", "openid", name="uq_socialuser_type_openid"),
+        ForeignKeyConstraint(
+            ["user_id", "tenant_id"],
+            ["tenantmembership.user_id", "tenantmembership.tenant_id"],
+        ),
+        ForeignKeyConstraint(
+            ["social_client_id", "tenant_id"],
+            ["socialclient.id", "socialclient.tenant_id"],
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "type",
+            "openid",
+            name="uq_socialuser_tenant_type_openid",
+        ),
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    tenant_id: uuid.UUID = Field(
+        default=DEFAULT_TENANT_ID,
+        foreign_key="tenant.id",
+        index=True,
+        ondelete="CASCADE",
+    )
     type: str = Field(max_length=50, index=True)
     openid: str = Field(max_length=255, index=True)
     unionid: str | None = Field(default=None, max_length=255)
@@ -1781,6 +1938,7 @@ class SocialUser(SQLModel, table=True):
 
 class SocialUserPublic(SQLModel):
     id: uuid.UUID
+    tenant_id: uuid.UUID
     type: str
     openid: str
     unionid: str | None = None

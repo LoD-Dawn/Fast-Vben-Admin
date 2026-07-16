@@ -59,6 +59,7 @@ def test_social_client_secret_update_requires_current_password(
     social_client = SocialClient(
         name="Secret update test client",
         social_type="gitee",
+        user_type=f"admin-{random_lower_string()[:8]}",
         client_id=random_lower_string(),
         client_secret="old-secret",
     )

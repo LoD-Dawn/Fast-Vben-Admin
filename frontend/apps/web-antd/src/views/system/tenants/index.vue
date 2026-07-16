@@ -13,39 +13,33 @@ import { Button, message } from 'ant-design-vue';
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
 import {
   archiveTenantApi,
-  DEFAULT_TENANT_ID,
   listTenantsApi,
   notifyTenantMembershipsChanged,
-  updateTenantApi,
+  operateTenantLifecycleApi,
+  syncTenantMenusApi,
 } from '#/api';
 import { $t } from '#/locales';
 
 import { buildKeyword, confirmAction } from '../shared/utils';
 import { useColumns, useGridFormSchema } from './data';
 import Form from './modules/form.vue';
+import Lifecycle from './modules/lifecycle.vue';
+import Overview from './modules/overview.vue';
 
 const [FormDrawer, formDrawerApi] = useVbenDrawer({
   connectedComponent: Form,
   destroyOnClose: true,
 });
 
-async function onStatusChange(newStatus: boolean, row: TenantRecord) {
-  if (row.id === DEFAULT_TENANT_ID) {
-    message.warning('默认租户不能停用');
-    return false;
-  }
-  try {
-    await confirmAction(
-      `确认将租户 ${row.name} 的状态切换为【${newStatus ? '启用' : '禁用'}】吗？`,
-      '切换状态',
-    );
-    await updateTenantApi(row.id, { is_active: newStatus });
-    notifyTenantMembershipsChanged();
-    return true;
-  } catch {
-    return false;
-  }
-}
+const [LifecycleDrawer, lifecycleDrawerApi] = useVbenDrawer({
+  connectedComponent: Lifecycle,
+  destroyOnClose: true,
+});
+
+const [OverviewDrawer, overviewDrawerApi] = useVbenDrawer({
+  connectedComponent: Overview,
+  destroyOnClose: true,
+});
 
 function onActionClick({ code, row }: OnActionClickParams<TenantRecord>) {
   switch (code) {
@@ -53,10 +47,71 @@ function onActionClick({ code, row }: OnActionClickParams<TenantRecord>) {
       void onArchive(row);
       break;
     }
+    case 'convert': {
+      void onSimpleLifecycleAction(row, 'convert_to_formal');
+      break;
+    }
     case 'edit': {
       formDrawerApi.setData(row).open();
       break;
     }
+    case 'freeze':
+    case 'renew': {
+      lifecycleDrawerApi.setData({ action: code, tenant: row }).open();
+      break;
+    }
+    case 'overview': {
+      overviewDrawerApi.setData(row).open();
+      break;
+    }
+    case 'sync-menu': {
+      void onSyncMenu(row);
+      break;
+    }
+    case 'unfreeze': {
+      void onSimpleLifecycleAction(row, 'unfreeze');
+      break;
+    }
+  }
+}
+
+async function onSimpleLifecycleAction(
+  row: TenantRecord,
+  action: 'convert_to_formal' | 'unfreeze',
+) {
+  const actionText =
+    action === 'convert_to_formal'
+      ? $t('system.tenant.convertFormal')
+      : $t('system.tenant.unfreeze');
+  try {
+    await confirmAction(
+      $t('system.tenant.lifecycleConfirm', [row.name, actionText]),
+      actionText,
+    );
+    await operateTenantLifecycleApi(row.id, { action });
+    message.success($t('system.common.success'));
+    onRefresh();
+  } catch {
+    // Cancellation and request errors are handled by the shared UI layer.
+  }
+}
+
+async function onSyncMenu(row: TenantRecord) {
+  try {
+    await confirmAction(
+      $t('system.tenant.syncMenuConfirm', [row.name]),
+      $t('system.tenant.syncMenu'),
+    );
+    const result = await syncTenantMenusApi(row.id);
+    message.success(
+      $t('system.tenant.syncResult', [
+        result.success_count ?? 0,
+        result.failed_count ?? 0,
+        result.skipped_count ?? 0,
+      ]),
+    );
+  } catch {
+    // Cancellation and request errors are handled by the shared UI layer.
   }
 }
 
@@ -81,17 +136,23 @@ const [Grid, gridApi] = useVbenVxeGrid({
     submitOnChange: true,
   },
   gridOptions: {
-    columns: useColumns(onActionClick, onStatusChange),
+    columns: useColumns(onActionClick),
     height: 'auto',
     keepSource: true,
     proxyConfig: {
       ajax: {
         query: async ({ page }, formValues) => {
           return await listTenantsApi({
-            is_active: formValues.is_active,
+            customer_source: buildKeyword(formValues.customer_source),
+            expiring_in_days: formValues.expiring_in_days,
+            industry: formValues.industry,
+            initialization_template_id: formValues.initialization_template_id,
             keyword: buildKeyword(formValues.keyword),
+            lifecycle_status: formValues.lifecycle_status,
+            owner_name: buildKeyword(formValues.owner_name),
             page: page.currentPage,
             page_size: page.pageSize,
+            plan_id: formValues.plan_id,
           });
         },
       },
@@ -122,6 +183,8 @@ function onCreate() {
 <template>
   <Page auto-content-height>
     <FormDrawer @success="onRefresh" />
+    <LifecycleDrawer @success="onRefresh" />
+    <OverviewDrawer />
     <Grid :table-title="$t('system.tenant.list')">
       <template #toolbar-tools>
         <Button

@@ -21,6 +21,7 @@ const planId = ref<string>();
 const [Form, formApi] = useVbenForm({
   schema: useFormSchema(),
   showDefaultActions: false,
+  wrapperClass: 'grid-cols-2',
 });
 
 const [Drawer, drawerApi] = useVbenDrawer({
@@ -33,10 +34,16 @@ const [Drawer, drawerApi] = useVbenDrawer({
       description: values.description || null,
       is_active: values.is_active ?? true,
       is_default: values.is_default ?? false,
+      logo: values.logo || null,
       max_file_assets: values.max_file_assets ?? null,
       max_members: values.max_members ?? null,
       max_storage_bytes: values.max_storage_bytes ?? null,
       name: values.name,
+      order_num: values.order_num ?? 1,
+      price: values.price ?? 0,
+      published: values.published ?? 0,
+      remark: values.remark || null,
+      type: values.type ?? 0,
     };
 
     drawerApi.lock();
@@ -65,7 +72,7 @@ const drawerTitle = computed(() =>
 </script>
 
 <template>
-  <Drawer :title="drawerTitle" class="w-[560px]">
+  <Drawer :title="drawerTitle" class="w-[min(760px,calc(100vw-24px))]">
     <Form />
   </Drawer>
 </template>

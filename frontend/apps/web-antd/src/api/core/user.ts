@@ -2,13 +2,11 @@ import type { UserInfo } from '@vben/types';
 
 import { getCurrentUserApi } from './auth';
 
-const DEFAULT_AVATAR = '/images/avatar-v1.webp';
+export const DEFAULT_AVATAR = '/images/avatar-v1.webp';
 
-/**
- * 获取用户信息
- */
-export async function getUserInfoApi() {
-  const user = await getCurrentUserApi();
+export function mapCurrentUserToUserInfo(
+  user: Awaited<ReturnType<typeof getCurrentUserApi>>,
+) {
   const role = user.is_superuser ? 'super' : 'user';
 
   return {
@@ -21,4 +19,11 @@ export async function getUserInfoApi() {
     userId: user.id,
     username: user.email,
   } satisfies UserInfo;
+}
+
+/**
+ * 获取用户信息
+ */
+export async function getUserInfoApi() {
+  return mapCurrentUserToUserInfo(await getCurrentUserApi());
 }

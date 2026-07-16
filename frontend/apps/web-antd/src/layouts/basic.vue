@@ -7,9 +7,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { AuthenticationLoginExpiredModal } from '@vben/common-ui';
-import { VBEN_DOC_URL, VBEN_GITHUB_URL } from '@vben/constants';
 import { useWatermark } from '@vben/hooks';
-import { BookOpenText, CircleHelp, SvgGithubIcon } from '@vben/icons';
 import {
   BasicLayout,
   LockScreen,
@@ -18,7 +16,7 @@ import {
 } from '@vben/layouts';
 import { preferences, usePreferences } from '@vben/preferences';
 import { useAccessStore, useUserStore } from '@vben/stores';
-import { formatDateTime, openWindow } from '@vben/utils';
+import { formatDateTime } from '@vben/utils';
 
 import {
   getUnreadMessageCountApi,
@@ -34,6 +32,7 @@ import TenantSwitcher from './tenant-switcher.vue';
 
 const notifications = ref<NotificationItem[]>([]);
 const unreadCount = ref(0);
+const currentTenantName = ref('');
 
 function mapMessageToNotification(
   message: UserMessageRecord,
@@ -95,42 +94,11 @@ const menus = computed(() => [
     icon: 'lucide:user',
     text: $t('page.auth.profile'),
   },
-  {
-    handler: () => {
-      openWindow(VBEN_DOC_URL, {
-        target: '_blank',
-      });
-    },
-    icon: BookOpenText,
-    text: $t('ui.widgets.document'),
-  },
-  {
-    handler: () => {
-      openWindow(VBEN_GITHUB_URL, {
-        target: '_blank',
-      });
-    },
-    icon: SvgGithubIcon,
-    text: 'GitHub',
-  },
-  {
-    handler: () => {
-      openWindow(`${VBEN_GITHUB_URL}/issues`, {
-        target: '_blank',
-      });
-    },
-    icon: CircleHelp,
-    text: $t('ui.widgets.qa'),
-  },
 ]);
 
 const avatar = computed(() => {
   return userStore.userInfo?.avatar || preferences.app.defaultAvatar;
 });
-
-const userDescription = computed(
-  () => userStore.userInfo?.username || userStore.userInfo?.realName || '',
-);
 
 async function handleLogout() {
   await authStore.logout(false);
@@ -252,13 +220,14 @@ watch(
   <BasicLayout @clear-preferences-and-logout="handleLogout">
     <template #user-dropdown>
       <div class="flex items-center">
-        <TenantSwitcher />
+        <TenantSwitcher
+          @current-tenant-change="currentTenantName = $event"
+        />
         <UserDropdown
           :avatar
           :menus
           :text="userStore.userInfo?.realName"
-          :description="userDescription"
-          tag-text="Pro"
+          :description="currentTenantName"
           trigger="both"
           @logout="handleLogout"
           @clear-preferences-and-logout="handleLogout"

@@ -11,6 +11,7 @@ from fastapi.responses import RedirectResponse
 from sqlmodel import col, func, or_, select
 
 from app.api.deps import (
+    CurrentTenant,
     CurrentUser,
     SessionDep,
     normalize_pagination,
@@ -86,6 +87,20 @@ def authenticate_protocol_client(
     return client
 
 
+def get_oauth2_client_or_404(
+    *, session: SessionDep, tenant_id: uuid.UUID, client_id: uuid.UUID
+) -> OAuth2Client:
+    client = session.exec(
+        select(OAuth2Client).where(
+            OAuth2Client.id == client_id,
+            OAuth2Client.tenant_id == tenant_id,
+        )
+    ).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="OAuth2 client not found")
+    return client
+
+
 def revoke_token_family(session: SessionDep, token_family_id: uuid.UUID | None) -> None:
     if not token_family_id:
         return
@@ -105,6 +120,7 @@ def revoke_token_family(session: SessionDep, token_family_id: uuid.UUID | None) 
 def authorize_oauth2(
     session: SessionDep,
     current_user: CurrentUser,
+    tenant_context: CurrentTenant,
     client_id: str,
     redirect_uri: str,
     response_type: str = "code",
@@ -115,7 +131,10 @@ def authorize_oauth2(
     approved: bool = False,
 ) -> dict[str, str] | RedirectResponse:
     client = session.exec(
-        select(OAuth2Client).where(OAuth2Client.client_id == client_id)
+        select(OAuth2Client).where(
+            OAuth2Client.client_id == client_id,
+            OAuth2Client.tenant_id == tenant_context.tenant_id,
+        )
     ).first()
     if not client or not client.is_active:
         raise HTTPException(status_code=400, detail="OAuth2 client is invalid")
@@ -137,6 +156,7 @@ def authorize_oauth2(
     authorization_code = token_urlsafe(32)
     session.add(
         OAuth2AuthorizationCode(
+            tenant_id=tenant_context.tenant_id,
             code_hash=hash_oauth2_value(authorization_code),
             client_id=client.client_id,
             user_id=current_user.id,
@@ -179,6 +199,7 @@ def exchange_oauth2_token(
             )
         token = session.exec(
             select(OAuth2AccessToken).where(
+                OAuth2AccessToken.tenant_id == client.tenant_id,
                 OAuth2AccessToken.refresh_token_hash
                 == hash_oauth2_value(refresh_token),
                 OAuth2AccessToken.client_id == client.client_id,
@@ -205,6 +226,7 @@ def exchange_oauth2_token(
         session.add(token)
         session.add(
             OAuth2AccessToken(
+                tenant_id=client.tenant_id,
                 access_token_hash=hash_oauth2_value(access_token),
                 refresh_token_hash=hash_oauth2_value(next_refresh_token),
                 token_family_id=token.token_family_id,
@@ -237,6 +259,7 @@ def exchange_oauth2_token(
         raise HTTPException(status_code=400, detail="OAuth2 token request is invalid")
     authorization_code = session.exec(
         select(OAuth2AuthorizationCode).where(
+            OAuth2AuthorizationCode.tenant_id == client.tenant_id,
             OAuth2AuthorizationCode.code_hash == hash_oauth2_value(code)
         )
     ).first()
@@ -267,6 +290,7 @@ def exchange_oauth2_token(
     session.add(authorization_code)
     session.add(
         OAuth2AccessToken(
+            tenant_id=client.tenant_id,
             access_token_hash=hash_oauth2_value(access_token),
             refresh_token_hash=hash_oauth2_value(refresh_token),
             token_family_id=uuid.uuid4(),
@@ -303,6 +327,7 @@ def revoke_oauth2_protocol_token(
     token_hash = hash_oauth2_value(token)
     stored_token = session.exec(
         select(OAuth2AccessToken).where(
+            OAuth2AccessToken.tenant_id == client.tenant_id,
             OAuth2AccessToken.client_id == client.client_id,
             or_(
                 OAuth2AccessToken.access_token_hash == token_hash,
@@ -349,13 +374,14 @@ def ensure_oauth2_client_id_unique(
 )
 def read_oauth2_clients(
     session: SessionDep,
+    tenant_context: CurrentTenant,
     page: int = 1,
     page_size: int = 20,
     keyword: str | None = None,
     is_active: bool | None = None,
 ) -> Any:
     page, page_size = normalize_pagination(page=page, page_size=page_size)
-    filters = []
+    filters = [OAuth2Client.tenant_id == tenant_context.tenant_id]
     if keyword:
         pattern = f"%{keyword}%"
         filters.append(
@@ -395,10 +421,16 @@ def read_oauth2_clients(
     response_model=OAuth2ClientPublic,
 )
 def create_oauth2_client(
-    *, session: SessionDep, client_in: OAuth2ClientCreate
+    *,
+    session: SessionDep,
+    tenant_context: CurrentTenant,
+    client_in: OAuth2ClientCreate,
 ) -> OAuth2ClientPublic:
     ensure_oauth2_client_id_unique(session=session, client_id=client_in.client_id)
-    client = OAuth2Client.model_validate(client_in)
+    client = OAuth2Client.model_validate(
+        client_in,
+        update={"tenant_id": tenant_context.tenant_id},
+    )
     if client.client_secret:
         client.client_secret = encrypt_secret(client.client_secret)
     session.add(client)
@@ -412,10 +444,16 @@ def create_oauth2_client(
     dependencies=[Depends(require_permission("system:oauth2-client:list"))],
     response_model=OAuth2ClientPublic,
 )
-def read_oauth2_client(session: SessionDep, client_id: uuid.UUID) -> OAuth2ClientPublic:
-    client = session.get(OAuth2Client, client_id)
-    if not client:
-        raise HTTPException(status_code=404, detail="OAuth2 client not found")
+def read_oauth2_client(
+    tenant_context: CurrentTenant,
+    session: SessionDep,
+    client_id: uuid.UUID,
+) -> OAuth2ClientPublic:
+    client = get_oauth2_client_or_404(
+        session=session,
+        tenant_id=tenant_context.tenant_id,
+        client_id=client_id,
+    )
     return mask_oauth2_client(client)
 
 
@@ -427,13 +465,16 @@ def read_oauth2_client(session: SessionDep, client_id: uuid.UUID) -> OAuth2Clien
 def update_oauth2_client(
     *,
     session: SessionDep,
+    tenant_context: CurrentTenant,
     current_user: CurrentUser,
     client_id: uuid.UUID,
     client_in: OAuth2ClientUpdate,
 ) -> OAuth2ClientPublic:
-    client = session.get(OAuth2Client, client_id)
-    if not client:
-        raise HTTPException(status_code=404, detail="OAuth2 client not found")
+    client = get_oauth2_client_or_404(
+        session=session,
+        tenant_id=tenant_context.tenant_id,
+        client_id=client_id,
+    )
 
     update_data = client_in.model_dump(exclude_unset=True)
     current_password = update_data.pop("current_password", None)
@@ -466,12 +507,19 @@ def update_oauth2_client(
     dependencies=[Depends(require_permission("system:oauth2-client:delete"))],
     status_code=204,
 )
-def delete_oauth2_client(session: SessionDep, client_id: uuid.UUID) -> None:
-    client = session.get(OAuth2Client, client_id)
-    if not client:
-        raise HTTPException(status_code=404, detail="OAuth2 client not found")
+def delete_oauth2_client(
+    session: SessionDep,
+    tenant_context: CurrentTenant,
+    client_id: uuid.UUID,
+) -> None:
+    client = get_oauth2_client_or_404(
+        session=session,
+        tenant_id=tenant_context.tenant_id,
+        client_id=client_id,
+    )
     active_token = session.exec(
         select(OAuth2AccessToken).where(
+            OAuth2AccessToken.tenant_id == tenant_context.tenant_id,
             OAuth2AccessToken.client_id == client.client_id,
             OAuth2AccessToken.revoked_at.is_(None),
             OAuth2AccessToken.expires_at > get_datetime_utc(),
@@ -494,6 +542,7 @@ def delete_oauth2_client(session: SessionDep, client_id: uuid.UUID) -> None:
 )
 def read_oauth2_tokens(
     session: SessionDep,
+    tenant_context: CurrentTenant,
     page: int = 1,
     page_size: int = 20,
     keyword: str | None = None,
@@ -502,7 +551,7 @@ def read_oauth2_tokens(
     revoked: bool | None = None,
 ) -> Any:
     page, page_size = normalize_pagination(page=page, page_size=page_size)
-    filters = []
+    filters = [OAuth2AccessToken.tenant_id == tenant_context.tenant_id]
     if keyword:
         pattern = f"%{keyword}%"
         filters.append(
@@ -550,8 +599,17 @@ def read_oauth2_tokens(
     dependencies=[Depends(require_permission("system:oauth2-token:delete"))],
     status_code=204,
 )
-def revoke_oauth2_token(session: SessionDep, token_id: uuid.UUID) -> Response:
-    token = session.get(OAuth2AccessToken, token_id)
+def revoke_oauth2_token(
+    session: SessionDep,
+    tenant_context: CurrentTenant,
+    token_id: uuid.UUID,
+) -> Response:
+    token = session.exec(
+        select(OAuth2AccessToken).where(
+            OAuth2AccessToken.id == token_id,
+            OAuth2AccessToken.tenant_id == tenant_context.tenant_id,
+        )
+    ).first()
     if not token:
         raise HTTPException(status_code=404, detail="OAuth2 access token not found")
     if token.revoked_at is None:

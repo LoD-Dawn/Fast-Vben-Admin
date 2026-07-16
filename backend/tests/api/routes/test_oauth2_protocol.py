@@ -202,6 +202,7 @@ def test_expired_authorization_code_is_rejected(
         expires_at=get_datetime_utc() - timedelta(seconds=1),
     )
     db.add(oauth_client)
+    db.commit()
     db.add(authorization_code)
     db.commit()
 

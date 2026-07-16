@@ -18,6 +18,16 @@ export const userTypeOptions = [
   { label: '移动端', value: 'member' },
 ];
 
+function fullWidthSelectProps(placeholder: string) {
+  return {
+    class: 'w-full',
+    placeholder,
+    style: {
+      width: '100%',
+    },
+  };
+}
+
 export function useGridFormSchema(): VbenFormSchema[] {
   return [
     {
@@ -72,6 +82,7 @@ export function useFormSchema(): VbenFormSchema[] {
     {
       component: 'Select',
       componentProps: {
+        ...fullWidthSelectProps('请选择平台类型'),
         options: socialTypeOptions,
       },
       fieldName: 'social_type',
@@ -81,6 +92,7 @@ export function useFormSchema(): VbenFormSchema[] {
     {
       component: 'Select',
       componentProps: {
+        ...fullWidthSelectProps('请选择用户类型'),
         options: userTypeOptions,
       },
       defaultValue: 'admin',

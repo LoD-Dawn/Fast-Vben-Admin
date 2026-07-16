@@ -70,7 +70,7 @@ async function handleSubmit(values: Recordable<any>) {
 </script>
 <template>
   <ProfilePasswordSetting
-    class="w-1/3"
+    class="mt-4 w-full lg:w-1/2 2xl:w-1/2"
     :class="{ 'pointer-events-none opacity-60': saving }"
     :form-schema="formSchema"
     @submit="handleSubmit"

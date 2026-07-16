@@ -1,8 +1,10 @@
+import logging
 import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from sqlmodel import col, func, or_, select
+from sqlmodel import and_, col, delete, func, or_, select
 
 from app.api.deps import (
     CurrentTenant,
@@ -13,10 +15,18 @@ from app.api.deps import (
     normalize_pagination,
 )
 from app.api.routes.login import create_login_token
-from app.core.db import provision_tenant_roles
+from app.core.cache import CacheNamespace, redis_cache
+from app.core.db import (
+    ensure_tenant_plan_profile,
+    ensure_tenant_profile,
+    provision_tenant_roles,
+    sync_tenant_plan_role_menus,
+)
 from app.core.quotas import get_file_usage, get_member_count
+from app.core.security import get_password_hash
 from app.core.tenancy import DEFAULT_TENANT_ID
 from app.models import (
+    Menu,
     Tenant,
     TenantCreate,
     TenantInitializationTemplate,
@@ -24,24 +34,211 @@ from app.models import (
     TenantInitializationTemplatePublic,
     TenantInitializationTemplatesPublic,
     TenantInitializationTemplateUpdate,
+    TenantLifecycleAction,
+    TenantLifecycleActionRequest,
+    TenantLifecycleStatus,
     TenantMembership,
     TenantMembershipPublic,
+    TenantMenuSyncResult,
     TenantPlan,
     TenantPlanCreate,
+    TenantPlanMenu,
+    TenantPlanMenuUpdate,
+    TenantPlanProfile,
     TenantPlanPublic,
     TenantPlansPublic,
     TenantPlanUpdate,
+    TenantProfile,
     TenantPublic,
     TenantsPublic,
     TenantSwitchRequest,
     TenantUpdate,
     TenantUsagePublic,
     Token,
+    User,
     UserSession,
     get_datetime_utc,
 )
 
 router = APIRouter(prefix="/tenants", tags=["tenants"])
+logger = logging.getLogger(__name__)
+
+TENANT_FIELDS = {"code", "name", "description", "is_active"}
+TENANT_PROFILE_FIELDS = {
+    "contact_name",
+    "contact_mobile",
+    "industry",
+    "address_code",
+    "address_detail",
+    "qualifications",
+    "website",
+    "account_count",
+    "lifecycle_status",
+    "effective_at",
+    "trial_ends_at",
+    "service_expires_at",
+    "frozen_reason",
+    "owner_name",
+    "customer_source",
+    "follow_up_notes",
+}
+PLAN_FIELDS = {
+    "code",
+    "name",
+    "description",
+    "max_members",
+    "max_file_assets",
+    "max_storage_bytes",
+    "is_default",
+    "is_active",
+}
+PLAN_PROFILE_FIELD_MAP = {
+    "type": "package_type",
+    "logo": "logo",
+    "price": "price",
+    "published": "published",
+    "order_num": "order_num",
+    "remark": "remark",
+}
+REQUIRED_DEFAULT_PLAN_PERMISSION_CODES = {
+    "dashboard:view",
+    "personal:message:list",
+}
+
+
+def normalize_datetime(value: datetime | None) -> datetime | None:
+    if value is None or value.tzinfo is not None:
+        return value
+    return value.replace(tzinfo=UTC)
+
+
+def effective_lifecycle_status(
+    profile: TenantProfile, *, now: datetime | None = None
+) -> TenantLifecycleStatus:
+    current_time = now or get_datetime_utc()
+    if profile.lifecycle_status in {
+        TenantLifecycleStatus.FROZEN,
+        TenantLifecycleStatus.ARCHIVED,
+    }:
+        return profile.lifecycle_status
+    service_expires_at = normalize_datetime(profile.service_expires_at)
+    trial_ends_at = normalize_datetime(profile.trial_ends_at)
+    if service_expires_at is not None and service_expires_at <= current_time:
+        return TenantLifecycleStatus.EXPIRED
+    if (
+        profile.lifecycle_status == TenantLifecycleStatus.TRIAL
+        and trial_ends_at is not None
+        and trial_ends_at <= current_time
+    ):
+        return TenantLifecycleStatus.EXPIRED
+    return profile.lifecycle_status
+
+
+def validate_tenant_periods(profile: TenantProfile) -> None:
+    effective_at = normalize_datetime(profile.effective_at)
+    trial_ends_at = normalize_datetime(profile.trial_ends_at)
+    service_expires_at = normalize_datetime(profile.service_expires_at)
+    if effective_at and trial_ends_at and trial_ends_at <= effective_at:
+        raise HTTPException(
+            status_code=400, detail="Trial end time must be after effective time"
+        )
+    if effective_at and service_expires_at and service_expires_at <= effective_at:
+        raise HTTPException(
+            status_code=400, detail="Service expiry time must be after effective time"
+        )
+    if profile.lifecycle_status == TenantLifecycleStatus.TRIAL and not trial_ends_at:
+        raise HTTPException(status_code=400, detail="Trial tenant requires trial end time")
+
+
+def apply_tenant_profile_input(
+    *, profile: TenantProfile, data: dict[str, Any]
+) -> None:
+    profile_data = {
+        key: value for key, value in data.items() if key in TENANT_PROFILE_FIELDS
+    }
+    if "type" in data:
+        profile_data["tenant_type"] = data["type"]
+    for field_name in ("effective_at", "trial_ends_at", "service_expires_at"):
+        if field_name in profile_data:
+            profile_data[field_name] = normalize_datetime(profile_data[field_name])
+    profile.sqlmodel_update(profile_data)
+    profile.updated_at = get_datetime_utc()
+    validate_tenant_periods(profile)
+
+
+def build_tenant_plan_public(
+    *, session: SessionDep, plan: TenantPlan
+) -> TenantPlanPublic:
+    profile = session.get(TenantPlanProfile, plan.id)
+    menu_count = session.exec(
+        select(func.count())
+        .select_from(TenantPlanMenu)
+        .where(TenantPlanMenu.plan_id == plan.id)
+    ).one()
+    profile_data: dict[str, Any] = {}
+    if profile is not None:
+        profile_data = {
+            "type": profile.package_type,
+            "logo": profile.logo,
+            "price": profile.price,
+            "published": profile.published,
+            "order_num": profile.order_num,
+            "subscription_num": profile.subscription_num,
+            "subscription_total_amount": profile.subscription_total_amount,
+            "remark": profile.remark,
+        }
+    return TenantPlanPublic.model_validate(
+        plan,
+        update={**profile_data, "menu_count": menu_count},
+    )
+
+
+def apply_plan_profile_input(
+    *, profile: TenantPlanProfile, data: dict[str, Any]
+) -> None:
+    profile.sqlmodel_update(
+        {
+            profile_field: data[input_field]
+            for input_field, profile_field in PLAN_PROFILE_FIELD_MAP.items()
+            if input_field in data
+        }
+    )
+    profile.updated_at = get_datetime_utc()
+
+
+def build_lifecycle_filter(
+    lifecycle_status: TenantLifecycleStatus, *, now: datetime
+) -> Any:
+    expired = or_(
+        TenantProfile.lifecycle_status == TenantLifecycleStatus.EXPIRED,
+        TenantProfile.service_expires_at <= now,
+        and_(
+            TenantProfile.lifecycle_status == TenantLifecycleStatus.TRIAL,
+            TenantProfile.trial_ends_at <= now,
+        ),
+    )
+    if lifecycle_status == TenantLifecycleStatus.EXPIRED:
+        return expired
+    if lifecycle_status in {
+        TenantLifecycleStatus.TRIAL,
+        TenantLifecycleStatus.FORMAL,
+    }:
+        conditions = [
+            TenantProfile.lifecycle_status == lifecycle_status,
+            or_(
+                TenantProfile.service_expires_at.is_(None),
+                TenantProfile.service_expires_at > now,
+            ),
+        ]
+        if lifecycle_status == TenantLifecycleStatus.TRIAL:
+            conditions.append(
+                or_(
+                TenantProfile.trial_ends_at.is_(None),
+                TenantProfile.trial_ends_at > now,
+                )
+            )
+        return and_(*conditions)
+    return TenantProfile.lifecycle_status == lifecycle_status
 
 
 def get_tenant_or_404(*, session: SessionDep, tenant_id: uuid.UUID) -> Tenant:
@@ -128,12 +325,48 @@ def build_tenant_public(*, session: SessionDep, tenant: Tenant) -> TenantPublic:
     template = session.get(
         TenantInitializationTemplate, tenant.initialization_template_id
     )
+    profile = session.get(TenantProfile, tenant.id)
+    profile_data: dict[str, Any] = {}
+    effective_status = TenantLifecycleStatus.FORMAL
+    if profile is not None:
+        effective_status = effective_lifecycle_status(profile)
+        profile_data = {
+            "contact_user_id": profile.contact_user_id,
+            "contact_name": profile.contact_name,
+            "contact_mobile": profile.contact_mobile,
+            "industry": profile.industry,
+            "type": profile.tenant_type,
+            "address_code": profile.address_code,
+            "address_detail": profile.address_detail,
+            "qualifications": profile.qualifications,
+            "website": profile.website,
+            "recharge_amount": profile.recharge_amount,
+            "payment_amount": profile.payment_amount,
+            "balance_amount": profile.balance_amount,
+            "account_count": profile.account_count,
+            "lifecycle_status": effective_status,
+            "effective_at": profile.effective_at,
+            "trial_ends_at": profile.trial_ends_at,
+            "service_expires_at": profile.service_expires_at,
+            "frozen_at": profile.frozen_at,
+            "frozen_reason": profile.frozen_reason,
+            "owner_name": profile.owner_name,
+            "customer_source": profile.customer_source,
+            "follow_up_notes": profile.follow_up_notes,
+        }
     return TenantPublic.model_validate(
         tenant,
         update={
+            **profile_data,
+            "is_active": tenant.is_active
+            and effective_status
+            in {TenantLifecycleStatus.TRIAL, TenantLifecycleStatus.FORMAL},
             "plan_name": plan.name if plan is not None else None,
             "initialization_template_name": (
                 template.name if template is not None else None
+            ),
+            "current_account_count": get_member_count(
+                session=session, tenant_id=tenant.id
             ),
         },
     )
@@ -177,6 +410,65 @@ def revoke_tenant_sessions(*, session: SessionDep, tenant_id: uuid.UUID) -> None
     for user_session in sessions:
         user_session.revoked_at = revoked_at
         session.add(user_session)
+
+
+def resolve_plan_menu_ids(
+    *, session: SessionDep, menu_ids: list[uuid.UUID]
+) -> set[uuid.UUID]:
+    requested_ids = set(menu_ids)
+    if not requested_ids:
+        return set()
+    menus = session.exec(select(Menu).where(col(Menu.id).in_(requested_ids))).all()
+    if len(menus) != len(requested_ids):
+        raise HTTPException(status_code=400, detail="Some menus do not exist")
+    if any((menu.permission_code or "").startswith("platform:") for menu in menus):
+        raise HTTPException(
+            status_code=400,
+            detail="Platform management menus cannot be granted to tenant plans",
+        )
+
+    resolved_ids = set(requested_ids)
+    pending_parent_ids = {
+        menu.parent_id for menu in menus if menu.parent_id is not None
+    }
+    while pending_parent_ids:
+        parents = session.exec(
+            select(Menu).where(col(Menu.id).in_(pending_parent_ids))
+        ).all()
+        pending_parent_ids = set()
+        for parent in parents:
+            if (parent.permission_code or "").startswith("platform:"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Tenant plan menu cannot inherit from a platform menu",
+                )
+            if parent.id in resolved_ids:
+                continue
+            resolved_ids.add(parent.id)
+            if parent.parent_id is not None:
+                pending_parent_ids.add(parent.parent_id)
+    return resolved_ids
+
+
+def sync_plan_tenants(
+    *, session: SessionDep, plan_id: uuid.UUID
+) -> TenantMenuSyncResult:
+    result = TenantMenuSyncResult()
+    tenants = session.exec(select(Tenant).where(Tenant.plan_id == plan_id)).all()
+    for tenant in tenants:
+        try:
+            with session.begin_nested():
+                synced = sync_tenant_plan_role_menus(session=session, tenant=tenant)
+                session.flush()
+        except Exception:
+            logger.exception("Failed to sync tenant menus for tenant %s", tenant.id)
+            result.failed_count += 1
+        else:
+            if synced:
+                result.success_count += 1
+            else:
+                result.skipped_count += 1
+    return result
 
 
 @router.get("/me", response_model=list[TenantMembershipPublic])
@@ -243,19 +535,73 @@ def read_tenants(
     page_size: int = 20,
     keyword: str | None = None,
     is_active: bool | None = None,
+    lifecycle_status: TenantLifecycleStatus | None = None,
+    plan_id: uuid.UUID | None = None,
+    initialization_template_id: uuid.UUID | None = None,
+    industry: int | None = None,
+    owner_name: str | None = None,
+    customer_source: str | None = None,
+    expires_before: datetime | None = None,
+    expiring_in_days: int | None = None,
 ) -> Any:
     page, page_size = normalize_pagination(page=page, page_size=page_size)
+    now = get_datetime_utc()
     filters = []
     if keyword:
         pattern = f"%{keyword}%"
         filters.append(
-            or_(col(Tenant.code).ilike(pattern), col(Tenant.name).ilike(pattern))
+            or_(
+                col(Tenant.code).ilike(pattern),
+                col(Tenant.name).ilike(pattern),
+                col(TenantProfile.contact_name).ilike(pattern),
+                col(TenantProfile.contact_mobile).ilike(pattern),
+            )
         )
     if is_active is not None:
         filters.append(Tenant.is_active == is_active)
-    count = session.exec(select(func.count()).select_from(Tenant).where(*filters)).one()
+    if lifecycle_status is not None:
+        filters.append(build_lifecycle_filter(lifecycle_status, now=now))
+    if plan_id is not None:
+        filters.append(Tenant.plan_id == plan_id)
+    if initialization_template_id is not None:
+        filters.append(
+            Tenant.initialization_template_id == initialization_template_id
+        )
+    if industry is not None:
+        filters.append(TenantProfile.industry == industry)
+    if owner_name:
+        filters.append(col(TenantProfile.owner_name).ilike(f"%{owner_name}%"))
+    if customer_source:
+        filters.append(
+            col(TenantProfile.customer_source).ilike(f"%{customer_source}%")
+        )
+    normalized_expires_before = normalize_datetime(expires_before)
+    if expiring_in_days is not None:
+        if expiring_in_days < 1 or expiring_in_days > 3650:
+            raise HTTPException(
+                status_code=422,
+                detail="expiring_in_days must be between 1 and 3650",
+            )
+        normalized_expires_before = now + timedelta(days=expiring_in_days)
+        filters.extend(
+            [
+                TenantProfile.service_expires_at > now,
+                TenantProfile.service_expires_at <= normalized_expires_before,
+            ]
+        )
+    elif normalized_expires_before is not None:
+        filters.append(
+            TenantProfile.service_expires_at <= normalized_expires_before
+        )
+    count = session.exec(
+        select(func.count())
+        .select_from(Tenant)
+        .outerjoin(TenantProfile, TenantProfile.tenant_id == Tenant.id)
+        .where(*filters)
+    ).one()
     tenants = session.exec(
         select(Tenant)
+        .outerjoin(TenantProfile, TenantProfile.tenant_id == Tenant.id)
         .where(*filters)
         .order_by(col(Tenant.created_at).desc())
         .offset((page - 1) * page_size)
@@ -282,6 +628,8 @@ def read_tenant_plans(
     page_size: int = 50,
     keyword: str | None = None,
     is_active: bool | None = None,
+    type: int | None = None,
+    published: int | None = None,
 ) -> Any:
     page, page_size = normalize_pagination(page=page, page_size=page_size)
     filters = []
@@ -294,18 +642,26 @@ def read_tenant_plans(
         )
     if is_active is not None:
         filters.append(TenantPlan.is_active == is_active)
+    if type is not None:
+        filters.append(TenantPlanProfile.package_type == type)
+    if published is not None:
+        filters.append(TenantPlanProfile.published == published)
     count = session.exec(
-        select(func.count()).select_from(TenantPlan).where(*filters)
+        select(func.count())
+        .select_from(TenantPlan)
+        .outerjoin(TenantPlanProfile, TenantPlanProfile.plan_id == TenantPlan.id)
+        .where(*filters)
     ).one()
     plans = session.exec(
         select(TenantPlan)
+        .outerjoin(TenantPlanProfile, TenantPlanProfile.plan_id == TenantPlan.id)
         .where(*filters)
         .order_by(col(TenantPlan.is_default).desc(), col(TenantPlan.created_at))
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all()
     return TenantPlansPublic(
-        items=[TenantPlanPublic.model_validate(plan) for plan in plans],
+        items=[build_tenant_plan_public(session=session, plan=plan) for plan in plans],
         total=count,
         page=page,
         page_size=page_size,
@@ -323,7 +679,93 @@ def read_simple_tenant_plans(session: SessionDep) -> Any:
         .where(TenantPlan.is_active)
         .order_by(col(TenantPlan.is_default).desc(), col(TenantPlan.name))
     ).all()
-    return [TenantPlanPublic.model_validate(plan) for plan in plans]
+    return [build_tenant_plan_public(session=session, plan=plan) for plan in plans]
+
+
+@router.post(
+    "/plans/sync-menus",
+    dependencies=[Depends(get_current_active_superuser)],
+    response_model=TenantMenuSyncResult,
+)
+def sync_all_tenant_plan_menus(session: SessionDep) -> TenantMenuSyncResult:
+    result = TenantMenuSyncResult()
+    plan_ids = session.exec(select(TenantPlan.id).where(TenantPlan.is_active)).all()
+    for plan_id in plan_ids:
+        plan_result = sync_plan_tenants(session=session, plan_id=plan_id)
+        result.success_count += plan_result.success_count
+        result.failed_count += plan_result.failed_count
+        result.skipped_count += plan_result.skipped_count
+    session.commit()
+    redis_cache.bump_namespace(CacheNamespace.RBAC)
+    return result
+
+
+@router.get(
+    "/plans/{plan_id}/menus",
+    dependencies=[Depends(get_current_active_superuser)],
+    response_model=list[uuid.UUID],
+)
+def read_tenant_plan_menus(
+    *, session: SessionDep, plan_id: uuid.UUID
+) -> list[uuid.UUID]:
+    get_plan_or_404(session=session, plan_id=plan_id)
+    return list(
+        session.exec(
+            select(TenantPlanMenu.menu_id).where(TenantPlanMenu.plan_id == plan_id)
+        ).all()
+    )
+
+
+@router.put(
+    "/plans/{plan_id}/menus",
+    dependencies=[Depends(get_current_active_superuser)],
+    response_model=list[uuid.UUID],
+)
+def update_tenant_plan_menus(
+    *,
+    session: SessionDep,
+    plan_id: uuid.UUID,
+    body: TenantPlanMenuUpdate,
+) -> list[uuid.UUID]:
+    plan = get_plan_or_404(session=session, plan_id=plan_id)
+    resolved_ids = resolve_plan_menu_ids(session=session, menu_ids=body.menu_ids)
+    if plan.is_default:
+        required_menu_ids = set(
+            session.exec(
+                select(Menu.id).where(
+                    col(Menu.permission_code).in_(
+                        REQUIRED_DEFAULT_PLAN_PERMISSION_CODES
+                    )
+                )
+            ).all()
+        )
+        if not required_menu_ids.issubset(resolved_ids):
+            raise HTTPException(
+                status_code=400,
+                detail="Default tenant plan must retain required menus",
+            )
+    session.exec(delete(TenantPlanMenu).where(TenantPlanMenu.plan_id == plan.id))
+    for menu_id in resolved_ids:
+        session.add(TenantPlanMenu(plan_id=plan.id, menu_id=menu_id))
+    plan.updated_at = get_datetime_utc()
+    session.add(plan)
+    session.commit()
+    return list(resolved_ids)
+
+
+@router.post(
+    "/plans/{plan_id}/sync-menus",
+    dependencies=[Depends(get_current_active_superuser)],
+    response_model=TenantMenuSyncResult,
+)
+def sync_tenant_plan_menus(
+    *, session: SessionDep, plan_id: uuid.UUID
+) -> TenantMenuSyncResult:
+    get_plan_or_404(session=session, plan_id=plan_id)
+    result = sync_plan_tenants(session=session, plan_id=plan_id)
+    session.commit()
+    redis_cache.bump_namespace(CacheNamespace.RBAC)
+    return result
 
 
 @router.post(
@@ -336,13 +778,41 @@ def create_tenant_plan(
 ) -> TenantPlanPublic:
     if session.exec(select(TenantPlan).where(TenantPlan.code == plan_in.code)).first():
         raise HTTPException(status_code=409, detail="Tenant plan code already exists")
-    plan = TenantPlan.model_validate(plan_in)
+    input_data = plan_in.model_dump()
+    current_default = session.exec(
+        select(TenantPlan).where(TenantPlan.is_default)
+    ).first()
+    plan = TenantPlan.model_validate(
+        {key: value for key, value in input_data.items() if key in PLAN_FIELDS}
+    )
     if plan.is_default:
         set_default_plan(session=session, plan=plan)
     session.add(plan)
+    session.flush()
+    profile = ensure_tenant_plan_profile(session=session, plan=plan)
+    apply_plan_profile_input(profile=profile, data=input_data)
+    session.add(profile)
+    source_plan = current_default if current_default and current_default.id != plan.id else None
+    if source_plan is not None:
+        source_menu_ids = session.exec(
+            select(TenantPlanMenu.menu_id).where(
+                TenantPlanMenu.plan_id == source_plan.id
+            )
+        ).all()
+    else:
+        source_menu_ids = session.exec(
+            select(Menu.id).where(
+                or_(
+                    Menu.permission_code.is_(None),
+                    ~col(Menu.permission_code).startswith("platform:"),
+                )
+            )
+        ).all()
+    for menu_id in set(source_menu_ids):
+        session.add(TenantPlanMenu(plan_id=plan.id, menu_id=menu_id))
     session.commit()
     session.refresh(plan)
-    return TenantPlanPublic.model_validate(plan)
+    return build_tenant_plan_public(session=session, plan=plan)
 
 
 @router.patch(
@@ -357,7 +827,10 @@ def update_tenant_plan(
     plan_in: TenantPlanUpdate,
 ) -> TenantPlanPublic:
     plan = get_plan_or_404(session=session, plan_id=plan_id)
-    update_data = plan_in.model_dump(exclude_unset=True)
+    input_data = plan_in.model_dump(exclude_unset=True)
+    update_data = {
+        key: value for key, value in input_data.items() if key in PLAN_FIELDS
+    }
     new_code = update_data.get("code")
     if new_code and new_code != plan.code:
         existing = session.exec(
@@ -386,9 +859,12 @@ def update_tenant_plan(
         set_default_plan(session=session, plan=plan)
     plan.updated_at = get_datetime_utc()
     session.add(plan)
+    profile = ensure_tenant_plan_profile(session=session, plan=plan)
+    apply_plan_profile_input(profile=profile, data=input_data)
+    session.add(profile)
     session.commit()
     session.refresh(plan)
-    return TenantPlanPublic.model_validate(plan)
+    return build_tenant_plan_public(session=session, plan=plan)
 
 
 @router.delete(
@@ -576,25 +1052,64 @@ def create_tenant(
     existing = session.exec(select(Tenant).where(Tenant.code == tenant_in.code)).first()
     if existing is not None:
         raise HTTPException(status_code=409, detail="Tenant code already exists")
+    if bool(tenant_in.username) != bool(tenant_in.password):
+        raise HTTPException(
+            status_code=400,
+            detail="Administrator email and password must be provided together",
+        )
+    if tenant_in.lifecycle_status not in {
+        TenantLifecycleStatus.TRIAL,
+        TenantLifecycleStatus.FORMAL,
+    }:
+        raise HTTPException(
+            status_code=400,
+            detail="New tenant lifecycle status must be trial or formal",
+        )
+    if tenant_in.username and session.exec(
+        select(User).where(User.email == tenant_in.username)
+    ).first():
+        raise HTTPException(
+            status_code=409, detail="Tenant administrator email already exists"
+        )
     plan = resolve_active_plan(session=session, plan_id=tenant_in.plan_id)
     template = resolve_active_template(
         session=session,
         template_id=tenant_in.initialization_template_id,
     )
+    input_data = tenant_in.model_dump()
     tenant = Tenant.model_validate(
-        tenant_in,
+        {key: value for key, value in input_data.items() if key in TENANT_FIELDS},
         update={
             "plan_id": plan.id,
             "initialization_template_id": template.id,
+            "is_active": True,
         },
     )
     session.add(tenant)
     session.flush()
+    profile = ensure_tenant_profile(session=session, tenant=tenant)
+    apply_tenant_profile_input(profile=profile, data=input_data)
+    session.add(profile)
+
+    administrator: User | None = None
+    if tenant_in.username and tenant_in.password:
+        administrator = User(
+            email=tenant_in.username,
+            full_name=tenant_in.contact_name or f"{tenant.name}管理员",
+            hashed_password=get_password_hash(tenant_in.password),
+            is_active=True,
+            is_superuser=False,
+        )
+        session.add(administrator)
+        session.flush()
+        profile.contact_user_id = administrator.id
+        session.add(profile)
     provision_tenant_roles(
         session=session,
         tenant=tenant,
         template=template,
         owner=current_user,
+        additional_owners=[administrator] if administrator else None,
     )
     session.commit()
     session.refresh(tenant)
@@ -617,10 +1132,135 @@ def read_tenant_usage(
     )
     return TenantUsagePublic(
         tenant_id=tenant.id,
-        plan=TenantPlanPublic.model_validate(plan),
+        plan=build_tenant_plan_public(session=session, plan=plan),
         members=get_member_count(session=session, tenant_id=tenant.id),
         file_assets=file_assets,
         storage_bytes=storage_bytes,
+    )
+
+
+@router.post(
+    "/{tenant_id}/lifecycle",
+    dependencies=[Depends(get_current_active_superuser)],
+    response_model=TenantPublic,
+)
+def operate_tenant_lifecycle(
+    *,
+    session: SessionDep,
+    tenant_id: uuid.UUID,
+    body: TenantLifecycleActionRequest,
+) -> TenantPublic:
+    if tenant_id == DEFAULT_TENANT_ID:
+        raise HTTPException(
+            status_code=400, detail="Default tenant lifecycle cannot be changed"
+        )
+    tenant = get_tenant_or_404(session=session, tenant_id=tenant_id)
+    profile = ensure_tenant_profile(session=session, tenant=tenant)
+    now = get_datetime_utc()
+    current_status = effective_lifecycle_status(profile, now=now)
+
+    if body.action == TenantLifecycleAction.CONVERT_TO_FORMAL:
+        if current_status != TenantLifecycleStatus.TRIAL:
+            raise HTTPException(
+                status_code=400, detail="Only a trial tenant can become formal"
+            )
+        profile.lifecycle_status = TenantLifecycleStatus.FORMAL
+        profile.effective_at = profile.effective_at or now
+    elif body.action == TenantLifecycleAction.RENEW:
+        expires_at = normalize_datetime(body.service_expires_at)
+        if expires_at is None or expires_at <= now:
+            raise HTTPException(
+                status_code=400, detail="Renewal expiry time must be in the future"
+            )
+        profile.service_expires_at = expires_at
+        if current_status == TenantLifecycleStatus.EXPIRED:
+            profile.lifecycle_status = TenantLifecycleStatus.FORMAL
+        elif current_status == TenantLifecycleStatus.FROZEN:
+            status_before_freeze = profile.lifecycle_status_before_freeze
+            trial_ends_at = normalize_datetime(profile.trial_ends_at)
+            if status_before_freeze == TenantLifecycleStatus.EXPIRED or (
+                status_before_freeze == TenantLifecycleStatus.TRIAL
+                and trial_ends_at is not None
+                and trial_ends_at <= now
+            ):
+                profile.lifecycle_status_before_freeze = TenantLifecycleStatus.FORMAL
+        elif current_status == TenantLifecycleStatus.ARCHIVED:
+            raise HTTPException(
+                status_code=400, detail="Archived tenant cannot be renewed"
+            )
+    elif body.action == TenantLifecycleAction.FREEZE:
+        reason = (body.frozen_reason or "").strip()
+        if not reason:
+            raise HTTPException(status_code=400, detail="Freeze reason is required")
+        if current_status in {
+            TenantLifecycleStatus.FROZEN,
+            TenantLifecycleStatus.ARCHIVED,
+        }:
+            raise HTTPException(
+                status_code=400, detail="Tenant cannot be frozen in current status"
+            )
+        profile.lifecycle_status_before_freeze = current_status
+        profile.lifecycle_status = TenantLifecycleStatus.FROZEN
+        profile.frozen_at = now
+        profile.frozen_reason = reason
+    elif body.action == TenantLifecycleAction.UNFREEZE:
+        if current_status != TenantLifecycleStatus.FROZEN:
+            raise HTTPException(status_code=400, detail="Tenant is not frozen")
+        restored_status = (
+            profile.lifecycle_status_before_freeze or TenantLifecycleStatus.FORMAL
+        )
+        service_expires_at = normalize_datetime(profile.service_expires_at)
+        trial_ends_at = normalize_datetime(profile.trial_ends_at)
+        if (
+            service_expires_at is not None
+            and service_expires_at <= now
+            or restored_status == TenantLifecycleStatus.TRIAL
+            and trial_ends_at is not None
+            and trial_ends_at <= now
+        ):
+            raise HTTPException(
+                status_code=400, detail="Expired tenant must be renewed before unfreeze"
+            )
+        profile.lifecycle_status = restored_status
+        profile.lifecycle_status_before_freeze = None
+        profile.frozen_at = None
+        profile.frozen_reason = None
+    elif body.action == TenantLifecycleAction.ARCHIVE:
+        profile.lifecycle_status = TenantLifecycleStatus.ARCHIVED
+        profile.lifecycle_status_before_freeze = None
+
+    profile.updated_at = now
+    final_status = effective_lifecycle_status(profile, now=now)
+    was_active = tenant.is_active
+    tenant.is_active = final_status in {
+        TenantLifecycleStatus.TRIAL,
+        TenantLifecycleStatus.FORMAL,
+    }
+    tenant.updated_at = now
+    session.add(profile)
+    session.add(tenant)
+    if was_active and not tenant.is_active:
+        revoke_tenant_sessions(session=session, tenant_id=tenant.id)
+    session.commit()
+    session.refresh(tenant)
+    return build_tenant_public(session=session, tenant=tenant)
+
+
+@router.post(
+    "/{tenant_id}/sync-menus",
+    dependencies=[Depends(get_current_active_superuser)],
+    response_model=TenantMenuSyncResult,
+)
+def sync_tenant_menus(
+    *, session: SessionDep, tenant_id: uuid.UUID
+) -> TenantMenuSyncResult:
+    tenant = get_tenant_or_404(session=session, tenant_id=tenant_id)
+    synced = sync_tenant_plan_role_menus(session=session, tenant=tenant)
+    session.commit()
+    redis_cache.bump_namespace(CacheNamespace.RBAC)
+    return TenantMenuSyncResult(
+        success_count=1 if synced else 0,
+        skipped_count=0 if synced else 1,
     )
 
 
@@ -643,12 +1283,16 @@ def update_tenant(
     *, session: SessionDep, tenant_id: uuid.UUID, tenant_in: TenantUpdate
 ) -> Any:
     tenant = get_tenant_or_404(session=session, tenant_id=tenant_id)
-    update_data = tenant_in.model_dump(exclude_unset=True)
-    if "plan_id" in update_data:
+    input_data = tenant_in.model_dump(exclude_unset=True)
+    update_data = {
+        key: value for key, value in input_data.items() if key in TENANT_FIELDS
+    }
+    if "plan_id" in input_data:
         update_data["plan_id"] = resolve_active_plan(
             session=session,
-            plan_id=update_data["plan_id"],
+            plan_id=input_data["plan_id"],
         ).id
+    profile = ensure_tenant_profile(session=session, tenant=tenant)
     if tenant.id == DEFAULT_TENANT_ID:
         if update_data.get("is_active") is False:
             raise HTTPException(
@@ -658,15 +1302,55 @@ def update_tenant(
             raise HTTPException(
                 status_code=400, detail="Default tenant code cannot be changed"
             )
+        protected_profile_fields = {
+            "lifecycle_status",
+            "trial_ends_at",
+            "service_expires_at",
+            "frozen_reason",
+        }
+        if protected_profile_fields & input_data.keys():
+            raise HTTPException(
+                status_code=400,
+                detail="Default tenant lifecycle cannot be changed",
+            )
     new_code = update_data.get("code")
     if new_code and new_code != tenant.code:
         existing = session.exec(select(Tenant).where(Tenant.code == new_code)).first()
         if existing is not None:
             raise HTTPException(status_code=409, detail="Tenant code already exists")
+    previous_status = effective_lifecycle_status(profile)
+    if "is_active" in update_data:
+        requested_active = update_data.pop("is_active")
+        if not requested_active:
+            if previous_status not in {
+                TenantLifecycleStatus.FROZEN,
+                TenantLifecycleStatus.ARCHIVED,
+            }:
+                profile.lifecycle_status_before_freeze = previous_status
+                profile.lifecycle_status = TenantLifecycleStatus.FROZEN
+                profile.frozen_at = get_datetime_utc()
+                profile.frozen_reason = (
+                    input_data.get("frozen_reason") or "Manual disable"
+                )
+        elif previous_status == TenantLifecycleStatus.FROZEN:
+            restored_status = (
+                profile.lifecycle_status_before_freeze or TenantLifecycleStatus.FORMAL
+            )
+            profile.lifecycle_status = restored_status
+            profile.lifecycle_status_before_freeze = None
+            profile.frozen_at = None
+            profile.frozen_reason = None
+    apply_tenant_profile_input(profile=profile, data=input_data)
+    current_status = effective_lifecycle_status(profile)
     was_active = tenant.is_active
     tenant.sqlmodel_update(update_data)
+    tenant.is_active = current_status in {
+        TenantLifecycleStatus.TRIAL,
+        TenantLifecycleStatus.FORMAL,
+    }
     tenant.updated_at = get_datetime_utc()
     session.add(tenant)
+    session.add(profile)
     if was_active and not tenant.is_active:
         revoke_tenant_sessions(session=session, tenant_id=tenant.id)
     session.commit()
@@ -683,9 +1367,14 @@ def archive_tenant(*, session: SessionDep, tenant_id: uuid.UUID) -> Response:
     if tenant_id == DEFAULT_TENANT_ID:
         raise HTTPException(status_code=400, detail="Default tenant cannot be disabled")
     tenant = get_tenant_or_404(session=session, tenant_id=tenant_id)
+    profile = ensure_tenant_profile(session=session, tenant=tenant)
+    profile.lifecycle_status = TenantLifecycleStatus.ARCHIVED
+    profile.lifecycle_status_before_freeze = None
+    profile.updated_at = get_datetime_utc()
     tenant.is_active = False
     tenant.updated_at = get_datetime_utc()
     session.add(tenant)
+    session.add(profile)
     revoke_tenant_sessions(session=session, tenant_id=tenant.id)
     session.commit()
     return Response(status_code=204)

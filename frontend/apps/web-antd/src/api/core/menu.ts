@@ -31,6 +31,7 @@ const LEGACY_MENU_TITLE_KEYS: Record<string, string> = {
   参数配置: 'menu.systemSettings',
   字典管理: 'menu.systemDictionaries',
   文件管理: 'menu.files',
+  租户中心: 'menu.systemTenantCenter',
   审计日志: 'menu.logs',
   日志审计: 'menu.logs',
   操作日志记录: 'menu.operationLogs',

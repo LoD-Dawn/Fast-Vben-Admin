@@ -25,6 +25,16 @@ export function arrayToCsv(value?: string[]) {
   return value?.filter(Boolean).join(',') || undefined;
 }
 
+function fullWidthSelectProps(placeholder: string) {
+  return {
+    class: 'w-full',
+    placeholder,
+    style: {
+      width: '100%',
+    },
+  };
+}
+
 export function useGridFormSchema(): VbenFormSchema[] {
   return [
     {
@@ -121,6 +131,7 @@ export function useFormSchema(): VbenFormSchema[] {
     {
       component: 'Select',
       componentProps: {
+        ...fullWidthSelectProps('请选择授权类型'),
         mode: 'multiple',
         options: grantTypeOptions,
       },
@@ -132,7 +143,9 @@ export function useFormSchema(): VbenFormSchema[] {
     {
       component: 'Select',
       componentProps: {
+        ...fullWidthSelectProps('请输入范围后按回车'),
         mode: 'tags',
+        tokenSeparators: [','],
       },
       defaultValue: ['read', 'write'],
       fieldName: 'scopes',
@@ -141,7 +154,9 @@ export function useFormSchema(): VbenFormSchema[] {
     {
       component: 'Select',
       componentProps: {
+        ...fullWidthSelectProps('请输入范围后按回车'),
         mode: 'tags',
+        tokenSeparators: [','],
       },
       fieldName: 'auto_approve_scopes',
       label: '自动授权范围',
@@ -149,7 +164,9 @@ export function useFormSchema(): VbenFormSchema[] {
     {
       component: 'Select',
       componentProps: {
+        ...fullWidthSelectProps('请输入回调地址后按回车'),
         mode: 'tags',
+        tokenSeparators: [','],
       },
       fieldName: 'redirect_uris',
       label: '回调地址',
@@ -157,7 +174,9 @@ export function useFormSchema(): VbenFormSchema[] {
     {
       component: 'Select',
       componentProps: {
+        ...fullWidthSelectProps('请输入权限后按回车'),
         mode: 'tags',
+        tokenSeparators: [','],
       },
       fieldName: 'authorities',
       label: '权限',
@@ -165,7 +184,9 @@ export function useFormSchema(): VbenFormSchema[] {
     {
       component: 'Select',
       componentProps: {
+        ...fullWidthSelectProps('请输入资源 ID 后按回车'),
         mode: 'tags',
+        tokenSeparators: [','],
       },
       fieldName: 'resource_ids',
       label: '资源 ID',

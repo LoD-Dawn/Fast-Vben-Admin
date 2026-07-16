@@ -2,6 +2,7 @@
   "dashboard": "Dashboard",
   "infrastructure": "Infrastructure",
   "system": "System",
+  "systemTenantCenter": "Tenant Center",
   "systemTenants": "Tenants",
   "systemTenantPlans": "Plans",
   "systemTenantTemplates": "Initialization Templates",

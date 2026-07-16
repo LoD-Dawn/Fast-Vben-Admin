@@ -1,4 +1,7 @@
 from io import BytesIO
+from base64 import urlsafe_b64encode
+from hashlib import sha256
+import uuid
 
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import IntegrityError
@@ -11,7 +14,12 @@ from app.models import (
     FileAsset,
     MailAccount,
     Notice,
+    OAuth2AccessToken,
+    OAuth2AuthorizationCode,
+    OAuth2Client,
     Role,
+    SocialClient,
+    SocialUser,
     SmsChannel,
     Tenant,
     TenantMembership,
@@ -190,6 +198,7 @@ def test_organization_resources_are_isolated_between_tenants(
         tenant_headers = {
             "Authorization": f"Bearer {switch_response.json()['access_token']}"
         }
+        default_headers = get_superuser_token_headers(client)
 
         tenant_department_response = client.post(
             f"{settings.API_V1_STR}/departments",
@@ -325,6 +334,306 @@ def test_organization_resources_are_isolated_between_tenants(
                 ).all():
                     db.delete(role)
                 db.commit()
+                db.delete(tenant)
+                db.commit()
+
+
+def test_oauth2_and_social_resources_are_isolated_between_tenants(
+    client: TestClient,
+    db: Session,
+) -> None:
+    default_headers = get_superuser_token_headers(client)
+    suffix = random_lower_string()[:10]
+    verifier = "a" * 43
+    challenge = (
+        urlsafe_b64encode(sha256(verifier.encode()).digest()).decode().rstrip("=")
+    )
+    tenant_id: str | None = None
+    oauth_client_ids: list[uuid.UUID] = []
+    social_client_ids: list[uuid.UUID] = []
+    social_user_ids: list[uuid.UUID] = []
+
+    default_oauth_client_code = f"default-oauth-{suffix}"
+    tenant_oauth_client_code = f"tenant-oauth-{suffix}"
+    redirect_uri = f"https://client.example.test/{suffix}/callback"
+    default_social_client_code = f"default-social-client-{suffix}"
+    tenant_social_client_code = f"tenant-social-client-{suffix}"
+    shared_social_openid = f"shared-openid-{suffix}"
+    shared_social_type = f"tenant-social-{suffix[:6]}"
+    shared_social_user_type = f"admin-{suffix[:6]}"
+
+    try:
+        default_oauth_client_response = client.post(
+            f"{settings.API_V1_STR}/oauth2/clients",
+            headers=default_headers,
+            json={
+                "client_id": default_oauth_client_code,
+                "client_secret": "default-secret",
+                "name": "Default OAuth2 client",
+                "redirect_uris": redirect_uri,
+            },
+        )
+        assert default_oauth_client_response.status_code == 200
+        default_oauth_client_id = default_oauth_client_response.json()["id"]
+        oauth_client_ids.append(uuid.UUID(default_oauth_client_id))
+        assert (
+            default_oauth_client_response.json()["tenant_id"] == str(DEFAULT_TENANT_ID)
+        )
+
+        default_social_client_response = client.post(
+            f"{settings.API_V1_STR}/social/clients",
+            headers=default_headers,
+            json={
+                "name": "Default social client",
+                "social_type": shared_social_type,
+                "user_type": shared_social_user_type,
+                "client_id": default_social_client_code,
+            },
+        )
+        assert default_social_client_response.status_code == 200
+        default_social_client_id = default_social_client_response.json()["id"]
+        social_client_ids.append(uuid.UUID(default_social_client_id))
+        assert (
+            default_social_client_response.json()["tenant_id"]
+            == str(DEFAULT_TENANT_ID)
+        )
+
+        default_social_user = SocialUser(
+            tenant_id=DEFAULT_TENANT_ID,
+            type=shared_social_type,
+            openid=shared_social_openid,
+            social_client_id=uuid.UUID(default_social_client_id),
+        )
+        db.add(default_social_user)
+        db.commit()
+        db.refresh(default_social_user)
+        social_user_ids.append(default_social_user.id)
+
+        tenant_response = client.post(
+            f"{settings.API_V1_STR}/tenants",
+            headers=default_headers,
+            json={
+                "code": f"oauth-social-{suffix}",
+                "name": "OAuth social isolation tenant",
+            },
+        )
+        assert tenant_response.status_code == 200
+        tenant_id = tenant_response.json()["id"]
+        switch_response = client.post(
+            f"{settings.API_V1_STR}/tenants/switch",
+            headers=default_headers,
+            json={"tenant_id": tenant_id},
+        )
+        assert switch_response.status_code == 200
+        tenant_headers = {
+            "Authorization": f"Bearer {switch_response.json()['access_token']}"
+        }
+        default_headers = get_superuser_token_headers(client)
+
+        tenant_oauth_client_response = client.post(
+            f"{settings.API_V1_STR}/oauth2/clients",
+            headers=tenant_headers,
+            json={
+                "client_id": tenant_oauth_client_code,
+                "client_secret": "tenant-secret",
+                "name": "Tenant OAuth2 client",
+                "redirect_uris": redirect_uri,
+            },
+        )
+        assert tenant_oauth_client_response.status_code == 200
+        tenant_oauth_client_id = tenant_oauth_client_response.json()["id"]
+        oauth_client_ids.append(uuid.UUID(tenant_oauth_client_id))
+        assert tenant_oauth_client_response.json()["tenant_id"] == tenant_id
+
+        tenant_oauth_clients_response = client.get(
+            f"{settings.API_V1_STR}/oauth2/clients",
+            headers=tenant_headers,
+            params={"keyword": suffix},
+        )
+        assert tenant_oauth_clients_response.status_code == 200
+        assert {
+            item["id"] for item in tenant_oauth_clients_response.json()["items"]
+        } == {tenant_oauth_client_id}
+        assert (
+            client.patch(
+                f"{settings.API_V1_STR}/oauth2/clients/{default_oauth_client_id}",
+                headers=tenant_headers,
+                json={"name": "Cross-tenant update"},
+            ).status_code
+            == 404
+        )
+        assert (
+            client.get(
+                f"{settings.API_V1_STR}/oauth2/authorize",
+                headers=default_headers,
+                params={
+                    "client_id": tenant_oauth_client_code,
+                    "redirect_uri": redirect_uri,
+                    "code_challenge": challenge,
+                },
+            ).status_code
+            == 400
+        )
+
+        authorized = client.get(
+            f"{settings.API_V1_STR}/oauth2/authorize",
+            headers=tenant_headers,
+            follow_redirects=False,
+            params={
+                "approved": True,
+                "client_id": tenant_oauth_client_code,
+                "redirect_uri": redirect_uri,
+                "code_challenge": challenge,
+                "scope": "read",
+            },
+        )
+        assert authorized.status_code == 302
+        authorization_code = authorized.headers["location"].split("code=", 1)[1]
+        token_response = client.post(
+            f"{settings.API_V1_STR}/oauth2/token",
+            data={
+                "grant_type": "authorization_code",
+                "client_id": tenant_oauth_client_code,
+                "client_secret": "tenant-secret",
+                "code": authorization_code,
+                "redirect_uri": redirect_uri,
+                "code_verifier": verifier,
+            },
+        )
+        assert token_response.status_code == 200
+
+        tenant_token_list_response = client.get(
+            f"{settings.API_V1_STR}/oauth2/tokens",
+            headers=tenant_headers,
+            params={"client_id": tenant_oauth_client_code},
+        )
+        assert tenant_token_list_response.status_code == 200
+        assert tenant_token_list_response.json()["items"]
+        tenant_token_id = tenant_token_list_response.json()["items"][0]["id"]
+        assert all(
+            item["tenant_id"] == tenant_id
+            for item in tenant_token_list_response.json()["items"]
+        )
+        default_token_list_response = client.get(
+            f"{settings.API_V1_STR}/oauth2/tokens",
+            headers=default_headers,
+            params={"client_id": tenant_oauth_client_code},
+        )
+        assert default_token_list_response.status_code == 200
+        assert default_token_list_response.json()["items"] == []
+        assert (
+            client.delete(
+                f"{settings.API_V1_STR}/oauth2/tokens/{tenant_token_id}",
+                headers=default_headers,
+            ).status_code
+            == 404
+        )
+
+        tenant_social_client_response = client.post(
+            f"{settings.API_V1_STR}/social/clients",
+            headers=tenant_headers,
+            json={
+                "name": "Tenant social client",
+                "social_type": shared_social_type,
+                "user_type": shared_social_user_type,
+                "client_id": tenant_social_client_code,
+            },
+        )
+        assert tenant_social_client_response.status_code == 200
+        tenant_social_client_id = tenant_social_client_response.json()["id"]
+        social_client_ids.append(uuid.UUID(tenant_social_client_id))
+        assert tenant_social_client_response.json()["tenant_id"] == tenant_id
+
+        tenant_social_user = SocialUser(
+            tenant_id=uuid.UUID(tenant_id),
+            type=shared_social_type,
+            openid=shared_social_openid,
+            social_client_id=uuid.UUID(tenant_social_client_id),
+        )
+        db.add(tenant_social_user)
+        db.commit()
+        db.refresh(tenant_social_user)
+        social_user_ids.append(tenant_social_user.id)
+
+        tenant_social_clients_response = client.get(
+            f"{settings.API_V1_STR}/social/clients",
+            headers=tenant_headers,
+            params={"keyword": suffix},
+        )
+        assert tenant_social_clients_response.status_code == 200
+        assert {
+            item["id"] for item in tenant_social_clients_response.json()["items"]
+        } == {tenant_social_client_id}
+        assert (
+            client.patch(
+                f"{settings.API_V1_STR}/social/clients/{default_social_client_id}",
+                headers=tenant_headers,
+                json={"name": "Cross-tenant update"},
+            ).status_code
+            == 404
+        )
+
+        default_social_users_response = client.get(
+            f"{settings.API_V1_STR}/social/users",
+            headers=default_headers,
+            params={"openid": shared_social_openid},
+        )
+        assert default_social_users_response.status_code == 200
+        assert {item["id"] for item in default_social_users_response.json()["items"]} == {
+            str(default_social_user.id)
+        }
+        tenant_social_users_response = client.get(
+            f"{settings.API_V1_STR}/social/users",
+            headers=tenant_headers,
+            params={"openid": shared_social_openid},
+        )
+        assert tenant_social_users_response.status_code == 200
+        assert {item["id"] for item in tenant_social_users_response.json()["items"]} == {
+            str(tenant_social_user.id)
+        }
+        assert (
+            client.get(
+                f"{settings.API_V1_STR}/social/users/{default_social_user.id}",
+                headers=tenant_headers,
+            ).status_code
+            == 404
+        )
+    finally:
+        db.rollback()
+        db.expire_all()
+        if social_user_ids:
+            db.exec(delete(SocialUser).where(SocialUser.id.in_(social_user_ids)))
+        if social_client_ids:
+            db.exec(delete(SocialClient).where(SocialClient.id.in_(social_client_ids)))
+        if oauth_client_ids:
+            db.exec(
+                delete(OAuth2AccessToken).where(
+                    OAuth2AccessToken.client_id.in_(
+                        [default_oauth_client_code, tenant_oauth_client_code]
+                    )
+                )
+            )
+            db.exec(
+                delete(OAuth2AuthorizationCode).where(
+                    OAuth2AuthorizationCode.client_id.in_(
+                        [default_oauth_client_code, tenant_oauth_client_code]
+                    )
+                )
+            )
+            db.exec(delete(OAuth2Client).where(OAuth2Client.id.in_(oauth_client_ids)))
+        db.commit()
+        if tenant_id is not None:
+            db.exec(delete(UserSession).where(UserSession.tenant_id == tenant_id))
+            db.exec(delete(UserPost).where(UserPost.tenant_id == tenant_id))
+            db.exec(delete(UserRole).where(UserRole.tenant_id == tenant_id))
+            db.exec(
+                delete(TenantMembership).where(TenantMembership.tenant_id == tenant_id)
+            )
+            for role in db.exec(select(Role).where(Role.tenant_id == tenant_id)).all():
+                db.delete(role)
+            db.commit()
+            tenant = db.get(Tenant, tenant_id)
+            if tenant is not None:
                 db.delete(tenant)
                 db.commit()
 

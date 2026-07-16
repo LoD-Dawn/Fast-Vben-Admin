@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
 from app.core.config import settings
+from app.core.tenancy import DEFAULT_TENANT_ID
 from app.models import FileAsset, FileStorageChannel, SystemSetting, User
 from app.storage import delete_stored_file
 
@@ -14,14 +15,44 @@ from app.storage import delete_stored_file
 @pytest.fixture(autouse=True)
 def reset_file_storage_state(db: Session) -> Generator[None]:
     db.rollback()
+    upload_setting_defaults = {
+        "upload.max_size_mb": ("10", "number"),
+        "upload.allowed_extensions": (settings.UPLOAD_ALLOWED_EXTENSIONS, "string"),
+        "upload.default_public": ("false", "boolean"),
+        "upload.presigned_url_expire_seconds": (
+            str(settings.S3_PRESIGNED_URL_EXPIRE_SECONDS),
+            "number",
+        ),
+    }
     original_file_asset_ids = {
         file_asset.id for file_asset in db.exec(select(FileAsset)).all()
     }
     original_avatar_urls = {
         user.id: user.avatar_url for user in db.exec(select(User)).all()
     }
+    original_settings = {
+        setting.id: setting.model_dump()
+        for setting in db.exec(
+            select(SystemSetting).where(
+                SystemSetting.tenant_id == DEFAULT_TENANT_ID,
+                SystemSetting.key.in_(upload_setting_defaults),
+            )
+        ).all()
+    }
+    original_channels = {
+        channel.id: channel.model_dump()
+        for channel in db.exec(
+            select(FileStorageChannel).where(
+                FileStorageChannel.tenant_id == DEFAULT_TENANT_ID
+            )
+        ).all()
+    }
     local_channel = None
-    for channel in db.exec(select(FileStorageChannel)).all():
+    for channel in db.exec(
+        select(FileStorageChannel).where(
+            FileStorageChannel.tenant_id == DEFAULT_TENANT_ID
+        )
+    ).all():
         if channel.code in {"s3-test", "minio-test"}:
             db.delete(channel)
         elif channel.code == "local":
@@ -44,16 +75,13 @@ def reset_file_storage_state(db: Session) -> Generator[None]:
                 is_active=True,
             )
         )
-    for key, (value, value_type) in {
-        "upload.max_size_mb": ("10", "number"),
-        "upload.allowed_extensions": (settings.UPLOAD_ALLOWED_EXTENSIONS, "string"),
-        "upload.default_public": ("false", "boolean"),
-        "upload.presigned_url_expire_seconds": (
-            str(settings.S3_PRESIGNED_URL_EXPIRE_SECONDS),
-            "number",
-        ),
-    }.items():
-        setting = db.exec(select(SystemSetting).where(SystemSetting.key == key)).first()
+    for key, (value, value_type) in upload_setting_defaults.items():
+        setting = db.exec(
+            select(SystemSetting).where(
+                SystemSetting.tenant_id == DEFAULT_TENANT_ID,
+                SystemSetting.key == key,
+            )
+        ).first()
         if setting:
             setting.value = value
             setting.value_type = value_type
@@ -74,28 +102,31 @@ def reset_file_storage_state(db: Session) -> Generator[None]:
                     db,
                 )
             db.delete(file_asset)
-    local_channel = None
-    for channel in db.exec(select(FileStorageChannel)).all():
-        if channel.code in {"s3-test", "minio-test"}:
-            db.delete(channel)
-        elif channel.code == "local":
-            local_channel = channel
-            channel.is_default = True
-            channel.is_active = True
-            db.add(channel)
-        else:
-            channel.is_default = False
-            db.add(channel)
-    if local_channel is None:
-        db.add(
-            FileStorageChannel(
-                name="本地存储",
-                code="local",
-                provider="local",
-                is_default=True,
-                is_active=True,
-            )
+    for setting in db.exec(
+        select(SystemSetting).where(
+            SystemSetting.tenant_id == DEFAULT_TENANT_ID,
+            SystemSetting.key.in_(upload_setting_defaults),
         )
+    ).all():
+        original = original_settings.get(setting.id)
+        if original is None:
+            db.delete(setting)
+            continue
+        for field, value in original.items():
+            setattr(setting, field, value)
+        db.add(setting)
+    for channel in db.exec(
+        select(FileStorageChannel).where(
+            FileStorageChannel.tenant_id == DEFAULT_TENANT_ID
+        )
+    ).all():
+        original = original_channels.get(channel.id)
+        if original is None:
+            db.delete(channel)
+            continue
+        for field, value in original.items():
+            setattr(channel, field, value)
+        db.add(channel)
     db.commit()
 
 
@@ -305,7 +336,11 @@ def test_s3_storage_upload_download_and_presigned_url(
         is_default=True,
         is_active=True,
     )
-    for existing in db.exec(select(FileStorageChannel)).all():
+    for existing in db.exec(
+        select(FileStorageChannel).where(
+            FileStorageChannel.tenant_id == DEFAULT_TENANT_ID
+        )
+    ).all():
         existing.is_default = False
         db.add(existing)
     db.add(channel)

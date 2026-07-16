@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import type { TenantMembershipRecord } from '#/api';
 
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import { ChevronDown, IconifyIcon } from '@vben/icons';
 
@@ -12,14 +12,24 @@ import { $t } from '#/locales';
 import { useAuthStore } from '#/store';
 
 const authStore = useAuthStore();
+const emit = defineEmits<{
+  currentTenantChange: [tenantName: string];
+}>();
 const memberships = ref<TenantMembershipRecord[]>([]);
 const switchingTenantId = ref<string>();
+const hasMultipleMemberships = computed(() => memberships.value.length > 1);
 
 const currentMembership = computed(
   () =>
     memberships.value.find((membership) => membership.is_current) ||
     memberships.value.find((membership) => membership.is_default) ||
     memberships.value[0],
+);
+
+watch(
+  currentMembership,
+  (membership) => emit('currentTenantChange', membership?.tenant.name || ''),
+  { immediate: true },
 );
 
 async function fetchMemberships() {
@@ -66,21 +76,24 @@ onBeforeUnmount(() => {
 
 <template>
   <Dropdown
-    v-if="currentMembership"
+    v-if="currentMembership && hasMultipleMemberships"
     placement="bottomRight"
     :trigger="['click']"
   >
     <Button
-      class="tenant-trigger mx-1 flex h-9 max-w-52 items-center gap-2 px-2"
+      class="tenant-trigger"
       type="text"
       :aria-label="$t('system.tenant.switch')"
       :title="$t('system.tenant.switch')"
     >
-      <IconifyIcon class="size-4 shrink-0" icon="lucide:building-2" />
-      <span class="tenant-name min-w-0 truncate text-sm font-medium">
+      <IconifyIcon class="tenant-icon size-4 shrink-0" icon="lucide:building-2" />
+      <span class="tenant-name min-w-0 truncate text-sm">
         {{ currentMembership.tenant.name }}
       </span>
-      <ChevronDown class="tenant-chevron size-3.5 shrink-0" />
+      <ChevronDown
+        v-if="hasMultipleMemberships"
+        class="tenant-chevron size-3.5 shrink-0"
+      />
     </Button>
     <template #overlay>
       <Menu
@@ -113,6 +126,34 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.tenant-trigger {
+  display: inline-flex;
+  height: 2rem;
+  max-width: 11rem;
+  align-items: center;
+  gap: 0.375rem;
+  margin: 0 0.25rem;
+  padding: 0 0.625rem;
+  color: hsl(var(--foreground) / 80%);
+  line-height: 1;
+  background: hsl(var(--accent) / 70%);
+  border: 1px solid transparent;
+  border-radius: 0.375rem;
+  box-shadow: none;
+}
+
+.tenant-trigger:hover,
+.tenant-trigger:focus-visible,
+.tenant-trigger.ant-dropdown-open {
+  color: hsl(var(--foreground));
+  background: hsl(var(--accent));
+  border-color: hsl(var(--border));
+}
+
+.tenant-icon {
+  color: hsl(var(--muted-foreground));
+}
+
 @media (max-width: 639px) {
   .tenant-name,
   .tenant-chevron {
@@ -120,9 +161,9 @@ onBeforeUnmount(() => {
   }
 
   .tenant-trigger {
-    width: 2.25rem;
-    padding-right: 0.5rem;
-    padding-left: 0.5rem;
+    width: 2rem;
+    justify-content: center;
+    padding: 0;
   }
 }
 </style>

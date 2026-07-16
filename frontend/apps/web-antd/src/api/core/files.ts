@@ -8,6 +8,7 @@ import type {
   StorageConfigPublic,
   UploadConfigPublic,
   UploadConfigUpdate,
+  UserPublic,
 } from '#/api/generated';
 
 import { requestClient } from '#/api/request';
@@ -47,6 +48,17 @@ export function uploadFileApi(file: File, isPublic = false) {
   formData.append('is_public', String(isPublic));
 
   return requestClient.post<FileAssetRecord>('/files/upload', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+}
+
+export function uploadAvatarApi(file: File) {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  return requestClient.post<UserPublic>('/files/avatar', formData, {
     headers: {
       'Content-Type': 'multipart/form-data',
     },

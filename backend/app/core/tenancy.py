@@ -1,9 +1,15 @@
 import uuid
 from dataclasses import dataclass
 
-from sqlmodel import Session, col, select
+from sqlmodel import Session, col, or_, select
 
-from app.models import Tenant, TenantMembership
+from app.models import (
+    Tenant,
+    TenantLifecycleStatus,
+    TenantMembership,
+    TenantProfile,
+    get_datetime_utc,
+)
 
 DEFAULT_TENANT_ID = uuid.UUID("00000000-0000-4000-8000-000000000001")
 DEFAULT_TENANT_CODE = "default"
@@ -71,13 +77,30 @@ def get_active_tenant_membership(
     user_id: uuid.UUID,
     tenant_id: uuid.UUID | None = None,
 ) -> tuple[TenantMembership, Tenant] | None:
+    now = get_datetime_utc()
     statement = (
         select(TenantMembership, Tenant)
         .join(Tenant, Tenant.id == TenantMembership.tenant_id)
+        .outerjoin(TenantProfile, TenantProfile.tenant_id == Tenant.id)
         .where(
             TenantMembership.user_id == user_id,
             TenantMembership.is_active,
             Tenant.is_active,
+            or_(
+                TenantProfile.tenant_id.is_(None),
+                TenantProfile.lifecycle_status.in_(
+                    [TenantLifecycleStatus.TRIAL, TenantLifecycleStatus.FORMAL]
+                ),
+            ),
+            or_(
+                TenantProfile.service_expires_at.is_(None),
+                TenantProfile.service_expires_at > now,
+            ),
+            or_(
+                TenantProfile.lifecycle_status != TenantLifecycleStatus.TRIAL,
+                TenantProfile.trial_ends_at.is_(None),
+                TenantProfile.trial_ends_at > now,
+            ),
         )
     )
     if tenant_id is not None:

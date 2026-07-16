@@ -14,10 +14,18 @@ import {
   setupVbenVxeTable,
   useVbenVxeGrid as useGrid,
 } from '@vben/plugins/vxe-table';
-import { get, isFunction, isString } from '@vben/utils';
+import { formatDateTime, get, isFunction, isString } from '@vben/utils';
 
 import { objectOmit } from '@vueuse/core';
-import { Button, Image, Popconfirm, Switch, Tag } from 'ant-design-vue';
+import {
+  Button,
+  Dropdown,
+  Image,
+  Menu,
+  Popconfirm,
+  Switch,
+  Tag,
+} from 'ant-design-vue';
 
 import { $t } from '#/locales';
 
@@ -261,9 +269,53 @@ setupVbenVxeTable({
           );
         }
 
-        const btns = operations.map((opt) =>
+        const maxVisible = attrs?.maxVisible ?? operations.length;
+        const visibleOperations = operations.slice(0, maxVisible);
+        const dropdownOperations = operations.slice(maxVisible);
+        const btns = visibleOperations.map((opt) =>
           opt.code === 'delete' ? renderConfirm(opt) : renderBtn(opt),
         );
+        if (dropdownOperations.length > 0) {
+          btns.push(
+            h(
+              Dropdown,
+              {
+                trigger: ['click'],
+              },
+              {
+                default: () =>
+                  h(
+                    Button,
+                    {
+                      'aria-label': attrs?.moreText || '更多操作',
+                      size: 'small',
+                      title: attrs?.moreText || '更多操作',
+                      type: 'text',
+                    },
+                    {
+                      default: () =>
+                        h(IconifyIcon, {
+                          class: 'size-5',
+                          icon: 'lucide:ellipsis',
+                        }),
+                    },
+                  ),
+                overlay: () =>
+                  h(Menu, {
+                    items: dropdownOperations.map((opt) => ({
+                      danger: opt.danger,
+                      disabled: opt.disabled,
+                      key: opt.code,
+                      label: opt.text,
+                    })),
+                    onClick: ({ key }: { key: number | string }) => {
+                      attrs?.onClick?.({ code: String(key), row });
+                    },
+                  }),
+              },
+            ),
+          );
+        }
         return h(
           'div',
           {
@@ -278,9 +330,56 @@ setupVbenVxeTable({
   useVbenForm,
 });
 
+const DATE_TIME_FIELD_RE = /(_at|_time)$/;
+
+function shouldApplyDateTimeFormatter(column: Recordable<any>) {
+  return (
+    isString(column.field) &&
+    DATE_TIME_FIELD_RE.test(column.field) &&
+    !column.formatter &&
+    !column.cellRender
+  );
+}
+
+function applyDefaultColumnFormatters(
+  columns: Recordable<any>[] = [],
+): Recordable<any>[] {
+  return columns.map((column) => {
+    const nextColumn = { ...column };
+    if (Array.isArray(column.children)) {
+      nextColumn.children = applyDefaultColumnFormatters(column.children);
+    }
+    if (shouldApplyDateTimeFormatter(nextColumn)) {
+      nextColumn.formatter = ({ cellValue }: { cellValue: unknown }) =>
+        cellValue ? formatDateTime(String(cellValue)) : '-';
+    }
+    return nextColumn;
+  });
+}
+
 export const useVbenVxeGrid = <T extends Record<string, any>>(
   ...rest: Parameters<typeof useGrid<T, ComponentType, ComponentPropsMap>>
-) => useGrid<T, ComponentType, ComponentPropsMap>(...rest);
+) => {
+  const [options, ...others] = rest;
+  const nextOptions =
+    options?.gridOptions?.columns && Array.isArray(options.gridOptions.columns)
+      ? {
+          ...options,
+          gridOptions: {
+            ...options.gridOptions,
+            columns: applyDefaultColumnFormatters(
+              options.gridOptions.columns as Recordable<any>[],
+            ),
+          },
+        }
+      : options;
+
+  return useGrid<T, ComponentType, ComponentPropsMap>(
+    ...( [nextOptions, ...others] as Parameters<
+      typeof useGrid<T, ComponentType, ComponentPropsMap>
+    >),
+  );
+};
 
 export const VbenTableAction = defineComponent(
   (props: TableActionProps, { attrs, slots }) => {
@@ -293,8 +392,8 @@ export const VbenTableAction = defineComponent(
       h(VbenTableActionCore, { hasPermission, ...props, ...attrs }, slots);
   },
   {
-    inheritAttrs: false,
     name: 'VbenTableAction',
+    inheritAttrs: false,
   },
 );
 

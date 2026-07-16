@@ -4,8 +4,11 @@ import type {
   TenantInitializationTemplatePublic,
   TenantInitializationTemplatesPublic,
   TenantInitializationTemplateUpdate,
+  TenantLifecycleActionRequest,
   TenantMembershipPublic,
+  TenantMenuSyncResult,
   TenantPlanCreate,
+  TenantPlanMenuUpdate,
   TenantPlanPublic,
   TenantPlansPublic,
   TenantPlanUpdate,
@@ -13,6 +16,7 @@ import type {
   TenantsPublic,
   TenantSwitchRequest,
   TenantUpdate,
+  TenantUsagePublic,
   Token,
 } from '#/api/generated';
 
@@ -35,12 +39,24 @@ export type TenantTemplateRecord = TenantInitializationTemplatePublic;
 export type TenantTemplateListResult = TenantInitializationTemplatesPublic;
 export type TenantTemplateCreatePayload = TenantInitializationTemplateCreate;
 export type TenantTemplateUpdatePayload = TenantInitializationTemplateUpdate;
+export type TenantLifecyclePayload = TenantLifecycleActionRequest;
+export type TenantMenuSyncRecord = TenantMenuSyncResult;
+export type TenantPlanMenuPayload = TenantPlanMenuUpdate;
+export type TenantUsageRecord = TenantUsagePublic;
 
 export interface TenantListParams {
+  customer_source?: string;
+  expiring_in_days?: number;
+  expires_before?: string;
+  industry?: number;
+  initialization_template_id?: string;
   is_active?: boolean;
   keyword?: string;
+  lifecycle_status?: string;
+  owner_name?: string;
   page?: number;
   page_size?: number;
+  plan_id?: string;
 }
 
 export interface TenantPlanListParams {
@@ -48,6 +64,8 @@ export interface TenantPlanListParams {
   keyword?: string;
   page?: number;
   page_size?: number;
+  published?: number;
+  type?: number;
 }
 
 export function listTenantsApi(params: TenantListParams = {}) {
@@ -67,6 +85,26 @@ export function updateTenantApi(tenantId: string, data: TenantUpdatePayload) {
 
 export function archiveTenantApi(tenantId: string) {
   return requestClient.delete(`/tenants/${tenantId}`);
+}
+
+export function operateTenantLifecycleApi(
+  tenantId: string,
+  data: TenantLifecyclePayload,
+) {
+  return requestClient.post<TenantRecord>(
+    `/tenants/${tenantId}/lifecycle`,
+    data,
+  );
+}
+
+export function syncTenantMenusApi(tenantId: string) {
+  return requestClient.post<TenantMenuSyncRecord>(
+    `/tenants/${tenantId}/sync-menus`,
+  );
+}
+
+export function getTenantUsageApi(tenantId: string) {
+  return requestClient.get<TenantUsageRecord>(`/tenants/${tenantId}/usage`);
 }
 
 export function listMyTenantsApi() {
@@ -109,6 +147,30 @@ export function updateTenantPlanApi(
 
 export function deleteTenantPlanApi(planId: string) {
   return requestClient.delete(`/tenants/plans/${planId}`);
+}
+
+export function getTenantPlanMenusApi(planId: string) {
+  return requestClient.get<string[]>(`/tenants/plans/${planId}/menus`);
+}
+
+export function updateTenantPlanMenusApi(
+  planId: string,
+  data: TenantPlanMenuPayload,
+) {
+  return requestClient.request<string[]>(`/tenants/plans/${planId}/menus`, {
+    data,
+    method: 'PUT',
+  });
+}
+
+export function syncTenantPlanMenusApi(planId: string) {
+  return requestClient.post<TenantMenuSyncRecord>(
+    `/tenants/plans/${planId}/sync-menus`,
+  );
+}
+
+export function syncAllTenantPlanMenusApi() {
+  return requestClient.post<TenantMenuSyncRecord>('/tenants/plans/sync-menus');
 }
 
 export function listTenantTemplatesApi(params: TenantPlanListParams = {}) {

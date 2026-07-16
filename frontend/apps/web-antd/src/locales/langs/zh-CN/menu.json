@@ -2,6 +2,7 @@
   "dashboard": "仪表盘",
   "infrastructure": "基础设施",
   "system": "系统管理",
+  "systemTenantCenter": "租户中心",
   "systemTenants": "租户管理",
   "systemTenantPlans": "套餐管理",
   "systemTenantTemplates": "初始化模板",

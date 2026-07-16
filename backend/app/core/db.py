@@ -1,4 +1,4 @@
-from sqlmodel import SQLModel, Session, create_engine, select
+from sqlmodel import Session, create_engine, delete, select
 
 from app import crud
 from app.core.config import settings
@@ -47,15 +47,6 @@ def init_db(session: Session) -> None:
 
     # This works because the models are already imported and registered from app.models
     # SQLModel.metadata.create_all(engine)
-
-    SQLModel.metadata.create_all(
-        engine,
-        tables=[
-            TenantProfile.__table__,
-            TenantPlanProfile.__table__,
-            TenantPlanMenu.__table__,
-        ],
-    )
 
     default_plan = ensure_default_tenant_plan(session=session)
     default_template = ensure_default_tenant_template(session=session)
@@ -362,6 +353,7 @@ def provision_tenant_roles(
     tenant: Tenant,
     template: TenantInitializationTemplate,
     owner: User | None = None,
+    additional_owners: list[User] | None = None,
 ) -> tuple[Role, Role, Role]:
     default_department = ensure_department(
         session=session,
@@ -415,21 +407,30 @@ def provision_tenant_roles(
         data_scope="self",
     )
     menus = seed_menus(session=session)
-    bind_role_menus(
+    plan_menu_ids = set(
+        session.exec(
+            select(TenantPlanMenu.menu_id).where(
+                TenantPlanMenu.plan_id == tenant.plan_id
+            )
+        ).all()
+    )
+    plan_menus = [
+        menu
+        for menu in menus
+        if menu.id in plan_menu_ids
+        and not (menu.permission_code or "").startswith("platform:")
+    ]
+    replace_role_menus(
         session=session,
         role=super_admin,
-        menus=[
-            menu
-            for menu in menus
-            if not (menu.permission_code or "").startswith("platform:")
-        ],
+        menus=plan_menus,
     )
-    bind_role_menus(
+    replace_role_menus(
         session=session,
         role=admin,
         menus=[
             menu
-            for menu in menus
+            for menu in plan_menus
             if menu.permission_code
             and (
                 menu.permission_code.startswith("system:")
@@ -438,12 +439,12 @@ def provision_tenant_roles(
             or menu.type == "directory"
         ],
     )
-    bind_role_menus(
+    replace_role_menus(
         session=session,
         role=default_user,
         menus=[
             menu
-            for menu in menus
+            for menu in plan_menus
             if menu.permission_code
             in {
                 "dashboard:view",
@@ -455,17 +456,18 @@ def provision_tenant_roles(
             }
         ],
     )
-    if owner is not None:
+    owners = [user for user in [owner, *(additional_owners or [])] if user is not None]
+    for tenant_owner in owners:
         membership = ensure_tenant_membership(
             session=session,
-            user=owner,
+            user=tenant_owner,
             tenant=tenant,
             is_default=False,
         )
         if membership.department_id is None:
             membership.department_id = default_department.id
             session.add(membership)
-        bind_user_role(session=session, user=owner, role=super_admin)
+        bind_user_role(session=session, user=tenant_owner, role=super_admin)
     return super_admin, admin, default_user
 
 
@@ -569,6 +571,16 @@ def seed_menus(*, session: Session) -> list[Menu]:
         icon="lucide:settings",
         sort=10,
     )
+    tenant_center = ensure_menu(
+        session=session,
+        title="menu.systemTenantCenter",
+        type="directory",
+        parent_id=system.id,
+        route_path="/system/tenant-center",
+        route_name="SystemTenantCenter",
+        icon="lucide:building",
+        sort=5,
+    )
     basic_settings = ensure_menu(
         session=session,
         title="menu.infrastructure",
@@ -582,37 +594,37 @@ def seed_menus(*, session: Session) -> list[Menu]:
         session=session,
         title="menu.systemTenants",
         type="menu",
-        parent_id=system.id,
+        parent_id=tenant_center.id,
         route_path="/system/tenants",
         route_name="SystemTenants",
         component="#/views/system/tenants/index.vue",
         icon="lucide:building-2",
         permission_code="platform:tenant:list",
-        sort=5,
+        sort=10,
     )
     tenant_plans = ensure_menu(
         session=session,
         title="menu.systemTenantPlans",
         type="menu",
-        parent_id=system.id,
+        parent_id=tenant_center.id,
         route_path="/system/tenant-plans",
         route_name="SystemTenantPlans",
         component="#/views/system/tenant-plans/index.vue",
         icon="lucide:package",
         permission_code="platform:plan:list",
-        sort=6,
+        sort=20,
     )
     tenant_templates = ensure_menu(
         session=session,
         title="menu.systemTenantTemplates",
         type="menu",
-        parent_id=system.id,
+        parent_id=tenant_center.id,
         route_path="/system/tenant-templates",
         route_name="SystemTenantTemplates",
         component="#/views/system/tenant-templates/index.vue",
         icon="lucide:layout-template",
         permission_code="platform:template:list",
-        sort=7,
+        sort=30,
     )
     users = ensure_menu(
         session=session,
@@ -1059,9 +1071,13 @@ def seed_menus(*, session: Session) -> list[Menu]:
         (tenants.id, "新增租户", "platform:tenant:create", 6),
         (tenants.id, "编辑租户", "platform:tenant:update", 7),
         (tenants.id, "停用租户", "platform:tenant:delete", 8),
+        (tenants.id, "生命周期操作", "platform:tenant:lifecycle", 9),
+        (tenants.id, "同步租户菜单", "platform:tenant:sync-menu", 10),
         (tenant_plans.id, "新增套餐", "platform:plan:create", 9),
         (tenant_plans.id, "编辑套餐", "platform:plan:update", 10),
         (tenant_plans.id, "删除套餐", "platform:plan:delete", 11),
+        (tenant_plans.id, "套餐菜单授权", "platform:plan:grant-menu", 12),
+        (tenant_plans.id, "同步套餐菜单", "platform:plan:sync-menu", 13),
         (tenant_templates.id, "新增模板", "platform:template:create", 12),
         (tenant_templates.id, "编辑模板", "platform:template:update", 13),
         (tenant_templates.id, "删除模板", "platform:template:delete", 14),
@@ -1175,6 +1191,7 @@ def seed_menus(*, session: Session) -> list[Menu]:
     return [
         dashboard,
         system,
+        tenant_center,
         basic_settings,
         tenants,
         tenant_plans,
@@ -1784,6 +1801,59 @@ def bind_role_menus(*, session: Session, role: Role, menus: list[Menu]) -> None:
     for menu in menus:
         if menu.id not in existing_menu_ids:
             session.add(RoleMenu(role_id=role.id, menu_id=menu.id))
+
+
+def replace_role_menus(*, session: Session, role: Role, menus: list[Menu]) -> None:
+    session.exec(delete(RoleMenu).where(RoleMenu.role_id == role.id))
+    for menu in menus:
+        session.add(RoleMenu(role_id=role.id, menu_id=menu.id))
+
+
+def sync_tenant_plan_role_menus(*, session: Session, tenant: Tenant) -> bool:
+    plan_menu_ids = set(
+        session.exec(
+            select(TenantPlanMenu.menu_id).where(
+                TenantPlanMenu.plan_id == tenant.plan_id
+            )
+        ).all()
+    )
+    allowed_menus = session.exec(
+        select(Menu).where(Menu.id.in_(plan_menu_ids))
+    ).all()
+    allowed_menus = [
+        menu
+        for menu in allowed_menus
+        if not (menu.permission_code or "").startswith("platform:")
+    ]
+    allowed_menu_ids = {menu.id for menu in allowed_menus}
+    roles = session.exec(
+        select(Role).where(
+            Role.tenant_id == tenant.id,
+            Role.code.in_(["super_admin", "admin", "user"]),
+        )
+    ).all()
+    role_by_code = {role.code: role for role in roles}
+    super_admin = role_by_code.get("super_admin")
+    if super_admin is None:
+        return False
+
+    replace_role_menus(session=session, role=super_admin, menus=allowed_menus)
+    for role_code in ("admin", "user"):
+        role = role_by_code.get(role_code)
+        if role is None:
+            continue
+        current_menu_ids = set(
+            session.exec(
+                select(RoleMenu.menu_id).where(RoleMenu.role_id == role.id)
+            ).all()
+        )
+        retained_ids = current_menu_ids & allowed_menu_ids
+        replace_role_menus(
+            session=session,
+            role=role,
+            menus=[menu for menu in allowed_menus if menu.id in retained_ids],
+        )
+    return True
 
 
 def bind_user_role(*, session: Session, user: User, role: Role) -> None:

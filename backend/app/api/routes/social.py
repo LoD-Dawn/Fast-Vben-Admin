@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import col, func, or_, select
 
 from app.api.deps import (
+    CurrentTenant,
     CurrentUser,
     SessionDep,
     normalize_pagination,
@@ -22,6 +23,7 @@ from app.models import (
     SocialUserBind,
     SocialUserPublic,
     SocialUsersPublic,
+    TenantMembership,
     User,
     get_datetime_utc,
 )
@@ -39,11 +41,13 @@ def mask_social_client(client: SocialClient) -> SocialClientPublic:
 def ensure_social_client_unique(
     *,
     session: SessionDep,
+    tenant_id: uuid.UUID,
     social_type: str,
     user_type: str,
     exclude_id: uuid.UUID | None = None,
 ) -> None:
     statement = select(SocialClient).where(
+        SocialClient.tenant_id == tenant_id,
         SocialClient.social_type == social_type,
         SocialClient.user_type == user_type,
     )
@@ -54,6 +58,34 @@ def ensure_social_client_unique(
             status_code=409,
             detail="Social client for this platform and user type already exists",
         )
+
+
+def get_social_client_or_404(
+    *, session: SessionDep, tenant_id: uuid.UUID, client_id: uuid.UUID
+) -> SocialClient:
+    client = session.exec(
+        select(SocialClient).where(
+            SocialClient.id == client_id,
+            SocialClient.tenant_id == tenant_id,
+        )
+    ).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Social client not found")
+    return client
+
+
+def get_social_user_or_404(
+    *, session: SessionDep, tenant_id: uuid.UUID, social_user_id: uuid.UUID
+) -> SocialUser:
+    social_user = session.exec(
+        select(SocialUser).where(
+            SocialUser.id == social_user_id,
+            SocialUser.tenant_id == tenant_id,
+        )
+    ).first()
+    if not social_user:
+        raise HTTPException(status_code=404, detail="Social user not found")
+    return social_user
 
 
 def to_social_user_public(
@@ -75,6 +107,7 @@ def to_social_user_public(
 )
 def read_social_clients(
     session: SessionDep,
+    tenant_context: CurrentTenant,
     page: int = 1,
     page_size: int = 20,
     keyword: str | None = None,
@@ -83,7 +116,7 @@ def read_social_clients(
     is_active: bool | None = None,
 ) -> Any:
     page, page_size = normalize_pagination(page=page, page_size=page_size)
-    filters = []
+    filters = [SocialClient.tenant_id == tenant_context.tenant_id]
     if keyword:
         pattern = f"%{keyword}%"
         filters.append(
@@ -127,14 +160,21 @@ def read_social_clients(
     response_model=SocialClientPublic,
 )
 def create_social_client(
-    *, session: SessionDep, client_in: SocialClientCreate
+    *,
+    session: SessionDep,
+    tenant_context: CurrentTenant,
+    client_in: SocialClientCreate,
 ) -> SocialClientPublic:
     ensure_social_client_unique(
         session=session,
+        tenant_id=tenant_context.tenant_id,
         social_type=client_in.social_type,
         user_type=client_in.user_type,
     )
-    client = SocialClient.model_validate(client_in)
+    client = SocialClient.model_validate(
+        client_in,
+        update={"tenant_id": tenant_context.tenant_id},
+    )
     if client.client_secret:
         client.client_secret = encrypt_secret(client.client_secret)
     session.add(client)
@@ -148,10 +188,16 @@ def create_social_client(
     dependencies=[Depends(require_permission("system:social-client:list"))],
     response_model=SocialClientPublic,
 )
-def read_social_client(session: SessionDep, client_id: uuid.UUID) -> SocialClientPublic:
-    client = session.get(SocialClient, client_id)
-    if not client:
-        raise HTTPException(status_code=404, detail="Social client not found")
+def read_social_client(
+    tenant_context: CurrentTenant,
+    session: SessionDep,
+    client_id: uuid.UUID,
+) -> SocialClientPublic:
+    client = get_social_client_or_404(
+        session=session,
+        tenant_id=tenant_context.tenant_id,
+        client_id=client_id,
+    )
     return mask_social_client(client)
 
 
@@ -163,13 +209,16 @@ def read_social_client(session: SessionDep, client_id: uuid.UUID) -> SocialClien
 def update_social_client(
     *,
     session: SessionDep,
+    tenant_context: CurrentTenant,
     current_user: CurrentUser,
     client_id: uuid.UUID,
     client_in: SocialClientUpdate,
 ) -> SocialClientPublic:
-    client = session.get(SocialClient, client_id)
-    if not client:
-        raise HTTPException(status_code=404, detail="Social client not found")
+    client = get_social_client_or_404(
+        session=session,
+        tenant_id=tenant_context.tenant_id,
+        client_id=client_id,
+    )
 
     update_data = client_in.model_dump(exclude_unset=True)
     current_password = update_data.pop("current_password", None)
@@ -187,6 +236,7 @@ def update_social_client(
     if next_social_type != client.social_type or next_user_type != client.user_type:
         ensure_social_client_unique(
             session=session,
+            tenant_id=tenant_context.tenant_id,
             social_type=next_social_type,
             user_type=next_user_type,
             exclude_id=client.id,
@@ -204,12 +254,21 @@ def update_social_client(
     dependencies=[Depends(require_permission("system:social-client:delete"))],
     status_code=204,
 )
-def delete_social_client(session: SessionDep, client_id: uuid.UUID) -> None:
-    client = session.get(SocialClient, client_id)
-    if not client:
-        raise HTTPException(status_code=404, detail="Social client not found")
+def delete_social_client(
+    tenant_context: CurrentTenant,
+    session: SessionDep,
+    client_id: uuid.UUID,
+) -> None:
+    client = get_social_client_or_404(
+        session=session,
+        tenant_id=tenant_context.tenant_id,
+        client_id=client_id,
+    )
     if session.exec(
-        select(SocialUser).where(SocialUser.social_client_id == client_id)
+        select(SocialUser).where(
+            SocialUser.tenant_id == tenant_context.tenant_id,
+            SocialUser.social_client_id == client_id,
+        )
     ).first():
         raise HTTPException(status_code=400, detail="Social client is used by users")
     session.delete(client)
@@ -224,6 +283,7 @@ def delete_social_client(session: SessionDep, client_id: uuid.UUID) -> None:
 )
 def read_social_users(
     session: SessionDep,
+    tenant_context: CurrentTenant,
     page: int = 1,
     page_size: int = 20,
     keyword: str | None = None,
@@ -232,7 +292,7 @@ def read_social_users(
     user_id: uuid.UUID | None = None,
 ) -> Any:
     page, page_size = normalize_pagination(page=page, page_size=page_size)
-    filters = []
+    filters = [SocialUser.tenant_id == tenant_context.tenant_id]
     if keyword:
         pattern = f"%{keyword}%"
         filters.append(
@@ -278,11 +338,15 @@ def read_social_users(
     response_model=SocialUserPublic,
 )
 def read_social_user(
-    session: SessionDep, social_user_id: uuid.UUID
+    tenant_context: CurrentTenant,
+    session: SessionDep,
+    social_user_id: uuid.UUID,
 ) -> SocialUserPublic:
-    social_user = session.get(SocialUser, social_user_id)
-    if not social_user:
-        raise HTTPException(status_code=404, detail="Social user not found")
+    social_user = get_social_user_or_404(
+        session=session,
+        tenant_id=tenant_context.tenant_id,
+        social_user_id=social_user_id,
+    )
     return to_social_user_public(session=session, social_user=social_user)
 
 
@@ -292,16 +356,35 @@ def read_social_user(
     response_model=SocialUserPublic,
 )
 def bind_social_user(
-    *, session: SessionDep, social_user_id: uuid.UUID, body: SocialUserBind
+    *,
+    session: SessionDep,
+    tenant_context: CurrentTenant,
+    social_user_id: uuid.UUID,
+    body: SocialUserBind,
 ) -> SocialUserPublic:
-    social_user = session.get(SocialUser, social_user_id)
-    if not social_user:
-        raise HTTPException(status_code=404, detail="Social user not found")
+    social_user = get_social_user_or_404(
+        session=session,
+        tenant_id=tenant_context.tenant_id,
+        social_user_id=social_user_id,
+    )
+    membership = session.exec(
+        select(TenantMembership)
+        .join(User, User.id == TenantMembership.user_id)
+        .where(
+            TenantMembership.user_id == body.user_id,
+            TenantMembership.tenant_id == tenant_context.tenant_id,
+            TenantMembership.is_active,
+            User.is_active,
+        )
+    ).first()
+    if not membership:
+        raise HTTPException(status_code=400, detail="Target user is invalid")
     user = session.get(User, body.user_id)
-    if not user or not user.is_active:
+    if not user:
         raise HTTPException(status_code=400, detail="Target user is invalid")
     conflict = session.exec(
         select(SocialUser).where(
+            SocialUser.tenant_id == tenant_context.tenant_id,
             SocialUser.type == social_user.type,
             SocialUser.user_id == body.user_id,
             SocialUser.id != social_user.id,
@@ -326,11 +409,16 @@ def bind_social_user(
     response_model=SocialUserPublic,
 )
 def unbind_social_user(
-    *, session: SessionDep, social_user_id: uuid.UUID
+    *,
+    session: SessionDep,
+    tenant_context: CurrentTenant,
+    social_user_id: uuid.UUID,
 ) -> SocialUserPublic:
-    social_user = session.get(SocialUser, social_user_id)
-    if not social_user:
-        raise HTTPException(status_code=404, detail="Social user not found")
+    social_user = get_social_user_or_404(
+        session=session,
+        tenant_id=tenant_context.tenant_id,
+        social_user_id=social_user_id,
+    )
     social_user.user_id = None
     social_user.updated_at = get_datetime_utc()
     session.add(social_user)
