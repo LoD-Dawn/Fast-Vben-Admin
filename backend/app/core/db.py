@@ -246,6 +246,11 @@ def seed_system_data(*, session: Session, superuser: User, tenant: Tenant) -> No
     seed_mail_accounts(session=session, tenant=tenant)
     seed_site_message_templates(session=session, tenant=tenant)
     menus = seed_menus(session=session)
+    ensure_default_tenant_plan_menus(
+        session=session,
+        plan=session.get(TenantPlan, tenant.plan_id),
+        menus=menus,
+    )
     bind_role_menus(
         session=session,
         role=super_admin,
@@ -288,6 +293,24 @@ def seed_system_data(*, session: Session, superuser: User, tenant: Tenant) -> No
     )
     bind_user_role(session=session, user=superuser, role=super_admin)
     session.commit()
+
+
+def ensure_default_tenant_plan_menus(
+    *, session: Session, plan: TenantPlan | None, menus: list[Menu]
+) -> None:
+    if plan is None or not plan.is_default:
+        return
+    existing_menu_ids = set(
+        session.exec(
+            select(TenantPlanMenu.menu_id).where(TenantPlanMenu.plan_id == plan.id)
+        ).all()
+    )
+    for menu in menus:
+        if (
+            menu.id not in existing_menu_ids
+            and not (menu.permission_code or "").startswith("platform:")
+        ):
+            session.add(TenantPlanMenu(plan_id=plan.id, menu_id=menu.id))
 
 
 def ensure_department(

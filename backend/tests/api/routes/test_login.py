@@ -95,6 +95,8 @@ def test_qr_code_login_is_confirmed_and_exchanged_once(
     monkeypatch.setattr(redis_cache, "get_json", lambda key: cache_store.get(key))
     monkeypatch.setattr(redis_cache, "compare_and_set_json", fake_compare_and_set_json)
     monkeypatch.setattr(redis_cache, "consume_json_if", fake_consume_json_if)
+    monkeypatch.setattr(settings, "LOGIN_RATE_LIMIT_ENABLED", False)
+    monkeypatch.setattr(settings, "LOGIN_CAPTCHA_ENABLED", False)
 
     created = client.post(
         f"{settings.API_V1_STR}/login/qr-code",
