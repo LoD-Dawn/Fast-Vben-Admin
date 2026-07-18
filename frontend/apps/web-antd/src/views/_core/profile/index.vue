@@ -34,15 +34,14 @@ onMounted(() => {
 
 <template>
   <Page auto-content-height>
-    <div class="flex flex-col lg:flex-row">
-      <Card class="w-full lg:w-2/5" :loading="loading" title="个人中心">
+    <div
+      class="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(400px,2fr)_minmax(0,3fr)]"
+    >
+      <Card class="h-full" :loading="loading" title="个人中心">
         <ProfileUser :profile="profile" @success="loadProfile" />
       </Card>
 
-      <Card
-        class="mt-3 min-w-0 w-full lg:ml-3 lg:mt-0 lg:w-3/5"
-        :loading="loading"
-      >
+      <Card class="min-w-0" :loading="loading">
         <Tabs v-model:active-key="activeName" class="-mt-4">
           <Tabs.TabPane key="basic" tab="基本设置">
             <ProfileBase :profile="profile" @success="loadProfile" />

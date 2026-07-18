@@ -1,0 +1,19 @@
+services:
+  db:
+    ports: !reset []
+
+  mailcatcher:
+    ports: !reset []
+
+  adminer:
+    ports: !reset []
+
+  redis:
+    ports: !reset []
+
+  backend:
+    ports: !reset []
+
+  frontend:
+    ports: !override
+      - "5173:80"

@@ -63,7 +63,7 @@ async function handleAvatarUpload(options: any) {
 
 <template>
   <div v-if="profile">
-    <div class="flex justify-center py-4">
+    <div class="flex justify-center py-5">
       <Upload
         accept="image/*"
         :custom-request="handleAvatarUpload"
@@ -95,7 +95,7 @@ async function handleAvatarUpload(options: any) {
     </div>
 
     <Descriptions
-      class="mt-6"
+      class="profile-descriptions mt-5"
       :column="{ xs: 1, sm: 1, md: 1, lg: 1, xl: 1, xxl: 2 }"
       size="small"
     >
@@ -139,13 +139,13 @@ async function handleAvatarUpload(options: any) {
         </template>
         {{ profile.is_active ? '正常' : '停用' }}
       </DescriptionsItem>
-      <DescriptionsItem>
+      <DescriptionsItem :span="2">
         <template #label>
           <span class="inline-flex items-center">
             <IconifyIcon icon="lucide:fingerprint" class="mr-1" />用户 ID
           </span>
         </template>
-        <span class="break-all">{{ profile.id }}</span>
+        <span class="whitespace-nowrap">{{ profile.id }}</span>
       </DescriptionsItem>
       <DescriptionsItem>
         <template #label>
@@ -166,3 +166,33 @@ async function handleAvatarUpload(options: any) {
     </Descriptions>
   </div>
 </template>
+
+<style scoped>
+.profile-descriptions :deep(.ant-descriptions-view) {
+  table-layout: fixed;
+}
+
+.profile-descriptions :deep(.ant-descriptions-item-label) {
+  padding-inline-end: 8px;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.profile-descriptions :deep(.ant-descriptions-item-content) {
+  min-width: 0;
+  padding-inline-end: 24px;
+  vertical-align: top;
+  word-break: break-word;
+}
+
+.profile-descriptions :deep(.ant-descriptions-row > th),
+.profile-descriptions :deep(.ant-descriptions-row > td) {
+  padding-bottom: 14px;
+}
+
+@media (min-width: 1536px) {
+  .profile-descriptions :deep(.ant-descriptions-row > td:nth-child(4n)) {
+    padding-inline-end: 0;
+  }
+}
+</style>

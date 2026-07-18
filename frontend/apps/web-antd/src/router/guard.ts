@@ -51,8 +51,10 @@ function setupAccessGuard(router: Router) {
     const userStore = useUserStore();
     const authStore = useAuthStore();
 
-    // 基本路由，这些路由不需要进入权限拦截
-    if (coreRouteNames.includes(to.name as string)) {
+    // 基本路由通常不需要进入权限拦截。个人中心使用基础布局，
+    // 刷新时仍需初始化动态菜单，否则侧边栏会保持为空。
+    const isProfileRoute = to.name === 'Profile';
+    if (coreRouteNames.includes(to.name as string) && !isProfileRoute) {
       if (to.path === LOGIN_PATH && accessStore.accessToken) {
         return decodeURIComponent(
           (to.query?.redirect as string) ||

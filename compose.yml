@@ -93,7 +93,7 @@ services:
       context: .
       dockerfile: frontend/Dockerfile
       args:
-        VITE_GLOB_API_URL: http://localhost:8000/api/v1
+        VITE_GLOB_API_URL: /api/v1
     restart: unless-stopped
     depends_on:
       backend:

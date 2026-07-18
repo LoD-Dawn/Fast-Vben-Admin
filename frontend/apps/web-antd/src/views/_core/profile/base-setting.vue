@@ -4,13 +4,13 @@ import type { Recordable } from '@vben/types';
 import type { AuthApi } from '#/api';
 import type { VbenFormSchema } from '#/adapter/form';
 
-import { computed, onMounted, ref, watch } from 'vue';
+import { onMounted, ref, watch } from 'vue';
 
-import { ProfileBaseSetting } from '@vben/common-ui';
 import { useUserStore } from '@vben/stores';
 
 import { message } from 'ant-design-vue';
 
+import { useVbenForm } from '#/adapter/form';
 import { getUserInfoApi, updateCurrentUserApi } from '#/api';
 
 const props = defineProps<{
@@ -22,11 +22,13 @@ const emit = defineEmits<{
 }>();
 
 const userStore = useUserStore();
-const profileBaseSettingRef = ref();
 const saving = ref(false);
 
-const formSchema = computed((): VbenFormSchema[] => {
-  return [
+const [Form, formApi] = useVbenForm({
+  commonConfig: {
+    labelWidth: 70,
+  },
+  schema: [
     {
       fieldName: 'full_name',
       component: 'Input',
@@ -37,14 +39,21 @@ const formSchema = computed((): VbenFormSchema[] => {
       component: 'Input',
       label: '邮箱',
     },
-  ];
+  ] satisfies VbenFormSchema[],
+  resetButtonOptions: {
+    show: false,
+  },
+  submitButtonOptions: {
+    content: '更新基本信息',
+  },
+  handleSubmit,
 });
 
 function applyProfile(data?: AuthApi.FastApiUser) {
-  if (!data || !profileBaseSettingRef.value) {
+  if (!data) {
     return;
   }
-  profileBaseSettingRef.value.getFormApi().setValues({
+  formApi.setValues({
     email: data.email,
     full_name: data.full_name || '',
   });
@@ -52,6 +61,7 @@ function applyProfile(data?: AuthApi.FastApiUser) {
 
 async function handleSubmit(values: Recordable<any>) {
   saving.value = true;
+  formApi.setLoading(true);
   try {
     await updateCurrentUserApi({
       email: String(values.email || ''),
@@ -61,6 +71,7 @@ async function handleSubmit(values: Recordable<any>) {
     message.success('个人资料已更新');
     emit('success');
   } finally {
+    formApi.setLoading(false);
     saving.value = false;
   }
 }
@@ -78,12 +89,10 @@ watch(
 );
 </script>
 <template>
-  <div class="mt-4 w-full lg:w-1/2 2xl:w-2/5">
-    <ProfileBaseSetting
-      ref="profileBaseSettingRef"
-      :class="{ 'pointer-events-none opacity-60': saving }"
-      :form-schema="formSchema"
-      @submit="handleSubmit"
-    />
+  <div
+    class="mt-4 w-full lg:w-1/2 2xl:w-2/5"
+    :class="{ 'pointer-events-none opacity-60': saving }"
+  >
+    <Form />
   </div>
 </template>
