@@ -4,7 +4,12 @@ import type { Recordable } from '@vben/types';
 
 import { computed, onMounted, ref } from 'vue';
 
-import { AuthenticationLogin, VbenIconButton, z } from '@vben/common-ui';
+import {
+  AuthenticationLogin,
+  VbenIconButton,
+  Verification,
+  z,
+} from '@vben/common-ui';
 import {
   SvgDingDingIcon,
   SvgGithubIcon,
@@ -12,12 +17,15 @@ import {
   SvgWeChatIcon,
 } from '@vben/icons';
 import { $t } from '@vben/locales';
+
 import { Button, message } from 'ant-design-vue';
 
 import {
+  checkSliderCaptchaApi,
   getEnterpriseOidcStatusApi,
   getLoginCaptchaApi,
   getRegistrationStatusApi,
+  getSliderCaptchaApi,
 } from '#/api';
 import { useAuthStore } from '#/store';
 
@@ -28,6 +36,8 @@ const captchaId = ref('');
 const captchaChallenge = ref('');
 const showCaptcha = ref(false);
 const showMfa = ref(false);
+const verifyRef = ref<InstanceType<typeof Verification>>();
+const pendingLoginValues = ref<null | Recordable<any>>(null);
 const enterpriseOidcLoginUrl = ref<string>();
 const registrationEnabled = ref(false);
 const defaultTenantCode =
@@ -110,10 +120,21 @@ async function loadCaptcha(username: string) {
 }
 
 async function handleSubmit(values: Recordable<any>) {
+  pendingLoginValues.value = { ...values };
+  verifyRef.value?.show();
+}
+
+async function handleVerifySuccess({ captchaVerification }: { captchaVerification: string }) {
+  const values = pendingLoginValues.value;
+  pendingLoginValues.value = null;
+  verifyRef.value?.onClose();
+  if (!values) return;
+
   try {
     await authStore.authLogin({
       ...values,
       captcha_id: showCaptcha.value ? captchaId.value : undefined,
+      captcha_verification: captchaVerification,
     });
   } catch (error: any) {
     const responseData = error?.response?.data ?? {};
@@ -186,71 +207,82 @@ onMounted(async () => {
 </script>
 
 <template>
-  <AuthenticationLogin
-    :form-schema="formSchema"
-    :loading="authStore.loginLoading"
-    :show-code-login="true"
-    :show-qrcode-login="true"
-    :show-register="registrationEnabled"
-    :show-third-party-login="false"
-    sub-title="请输入您的账户信息以开始管理项目"
-    @submit="handleSubmit"
-  >
-    <template #third-party-login>
-      <Button
-        v-if="enterpriseOidcLoginUrl"
-        class="mt-4"
-        block
-        type="default"
-        @click="startEnterpriseOidcLogin"
-      >
-        企业单点登录
-      </Button>
-      <div class="mt-4 flex items-center justify-between">
-        <span class="w-[35%] border-b border-input"></span>
-        <span class="text-center text-xs text-muted-foreground">
-          其他登录方式
-        </span>
-        <span class="w-[35%] border-b border-input"></span>
-      </div>
-      <div class="mt-4 flex justify-center gap-1">
-        <VbenIconButton
-          tooltip="微信登录"
-          tooltip-side="top"
-          @click="handleUnconfiguredSocialLogin('微信')"
+  <div class="w-full">
+    <AuthenticationLogin
+      :form-schema="formSchema"
+      :loading="authStore.loginLoading"
+      :show-code-login="true"
+      :show-qrcode-login="true"
+      :show-register="registrationEnabled"
+      :show-third-party-login="false"
+      sub-title="请输入您的账户信息以开始管理项目"
+      @submit="handleSubmit"
+    >
+      <template #third-party-login>
+        <Button
+          v-if="enterpriseOidcLoginUrl"
+          class="mt-4"
+          block
+          type="default"
+          @click="startEnterpriseOidcLogin"
         >
-          <SvgWeChatIcon />
-        </VbenIconButton>
-        <VbenIconButton
-          tooltip="钉钉登录"
-          tooltip-side="top"
-          @click="handleUnconfiguredSocialLogin('钉钉')"
-        >
-          <SvgDingDingIcon />
-        </VbenIconButton>
-        <VbenIconButton
-          tooltip="QQ 登录"
-          tooltip-side="top"
-          @click="handleUnconfiguredSocialLogin('QQ')"
-        >
-          <SvgQQChatIcon />
-        </VbenIconButton>
-        <VbenIconButton
-          tooltip="GitHub 登录"
-          tooltip-side="top"
-          @click="handleUnconfiguredSocialLogin('GitHub')"
-        >
-          <SvgGithubIcon />
-        </VbenIconButton>
-      </div>
-    </template>
-    <template #to-register>
-      <div v-if="registrationEnabled" class="mt-3 text-center text-sm">
-        还没有租户?
-        <RouterLink class="vben-link text-sm font-normal" to="/auth/register">
-          创建租户
-        </RouterLink>
-      </div>
-    </template>
-  </AuthenticationLogin>
+          企业单点登录
+        </Button>
+        <div class="mt-4 flex items-center justify-between">
+          <span class="w-[35%] border-b border-input"></span>
+          <span class="text-center text-xs text-muted-foreground">
+            其他登录方式
+          </span>
+          <span class="w-[35%] border-b border-input"></span>
+        </div>
+        <div class="mt-4 flex justify-center gap-1">
+          <VbenIconButton
+            tooltip="微信登录"
+            tooltip-side="top"
+            @click="handleUnconfiguredSocialLogin('微信')"
+          >
+            <SvgWeChatIcon />
+          </VbenIconButton>
+          <VbenIconButton
+            tooltip="钉钉登录"
+            tooltip-side="top"
+            @click="handleUnconfiguredSocialLogin('钉钉')"
+          >
+            <SvgDingDingIcon />
+          </VbenIconButton>
+          <VbenIconButton
+            tooltip="QQ 登录"
+            tooltip-side="top"
+            @click="handleUnconfiguredSocialLogin('QQ')"
+          >
+            <SvgQQChatIcon />
+          </VbenIconButton>
+          <VbenIconButton
+            tooltip="GitHub 登录"
+            tooltip-side="top"
+            @click="handleUnconfiguredSocialLogin('GitHub')"
+          >
+            <SvgGithubIcon />
+          </VbenIconButton>
+        </div>
+      </template>
+      <template #to-register>
+        <div v-if="registrationEnabled" class="mt-3 text-center text-sm">
+          还没有租户?
+          <RouterLink class="vben-link text-sm font-normal" to="/auth/register">
+            创建租户
+          </RouterLink>
+        </div>
+      </template>
+    </AuthenticationLogin>
+
+    <Verification
+      ref="verifyRef"
+      :check-captcha-api="checkSliderCaptchaApi"
+      :get-captcha-api="getSliderCaptchaApi"
+      :img-size="{ width: '400px', height: '200px' }"
+      mode="pop"
+      @on-success="handleVerifySuccess"
+    />
+  </div>
 </template>

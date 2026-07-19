@@ -1,15 +1,21 @@
+import base64
 import hashlib
 import hmac
+import json
 import random
 import re
 import secrets
+import time
 import uuid
 from datetime import timedelta
+from io import BytesIO
 from typing import Annotated, Any
 from urllib.parse import urlencode
 
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from PIL import Image, ImageDraw
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import delete, select
@@ -88,6 +94,9 @@ router = APIRouter(tags=["login"])
 LOGIN_RATE_LIMIT_MESSAGE = "Too many failed login attempts. Please try again later."
 LOGIN_CAPTCHA_REQUIRED_MESSAGE = "Captcha verification required."
 LOGIN_CAPTCHA_INVALID_MESSAGE = "Captcha is invalid or expired."
+LOGIN_SLIDER_CAPTCHA_INVALID_MESSAGE = (
+    "Slider captcha verification is invalid or expired."
+)
 LOGIN_MFA_REQUIRED_MESSAGE = "MFA verification required."
 LOGIN_MFA_INVALID_MESSAGE = "MFA verification code is invalid."
 LOGIN_MFA_SETUP_INVALID_MESSAGE = "MFA setup is invalid. Please restart MFA setup."
@@ -208,6 +217,7 @@ class LoginFormData(BaseModel):
     tenant_code: str | None = None
     captcha_code: str | None = None
     captcha_id: str | None = None
+    captcha_verification: str | None = None
     mfa_code: str | None = None
 
 
@@ -217,6 +227,7 @@ def get_login_form_data(
     tenant_code: Annotated[str | None, Form()] = None,
     captcha_code: Annotated[str | None, Form()] = None,
     captcha_id: Annotated[str | None, Form()] = None,
+    captcha_verification: Annotated[str | None, Form()] = None,
     mfa_code: Annotated[str | None, Form()] = None,
 ) -> LoginFormData:
     return LoginFormData(
@@ -225,6 +236,7 @@ def get_login_form_data(
         tenant_code=tenant_code,
         captcha_code=captcha_code,
         captcha_id=captcha_id,
+        captcha_verification=captcha_verification,
         mfa_code=mfa_code,
     )
 
@@ -319,6 +331,199 @@ def validate_login_captcha(
         and identifier == expected_identifier
         and client_ip == expected_ip
     )
+
+
+SLIDER_IMAGE_WIDTH = 400
+SLIDER_IMAGE_HEIGHT = 200
+SLIDER_BAR_WIDTH = 310
+SLIDER_PIECE_SIZE = 52
+SLIDER_PIECE_Y = 72
+_slider_memory: dict[str, dict[str, Any]] = {}
+
+
+def get_slider_captcha_key(token: str) -> str:
+    return redis_cache.build_key(CacheNamespace.LOGIN_SLIDER_CAPTCHA, token)
+
+
+def get_slider_verification_key(value: str) -> str:
+    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()
+    return redis_cache.build_key(
+        CacheNamespace.LOGIN_SLIDER_CAPTCHA, "verification", digest
+    )
+
+
+def _slider_memory_cleanup() -> None:
+    now = time.time()
+    for token, payload in list(_slider_memory.items()):
+        if float(payload.get("expires_at", 0)) <= now:
+            _slider_memory.pop(token, None)
+
+
+def _slider_get(token: str) -> dict[str, Any] | None:
+    payload = redis_cache.get_json(get_slider_captcha_key(token))
+    if isinstance(payload, dict):
+        return payload
+    _slider_memory_cleanup()
+    payload = _slider_memory.get(token)
+    return payload if isinstance(payload, dict) else None
+
+
+def _slider_set(token: str, payload: dict[str, Any]) -> bool:
+    ttl = settings.LOGIN_SLIDER_CAPTCHA_TTL_SECONDS
+    stored = redis_cache.set_json(
+        get_slider_captcha_key(token), payload, ttl_seconds=ttl
+    )
+    if stored:
+        return True
+    _slider_memory[token] = {**payload, "expires_at": time.time() + ttl}
+    return True
+
+
+def _slider_delete(token: str) -> None:
+    redis_cache.delete(get_slider_captcha_key(token))
+    _slider_memory.pop(token, None)
+
+
+def _slider_store_verification(value: str, token: str) -> None:
+    key = get_slider_verification_key(value)
+    ttl = settings.LOGIN_SLIDER_CAPTCHA_TTL_SECONDS
+    if not redis_cache.set_json(key, {"token": token}, ttl_seconds=ttl):
+        _slider_memory[key] = {"token": token, "expires_at": time.time() + ttl}
+
+
+def _slider_token_for_verification(value: str) -> str | None:
+    payload = redis_cache.get_json(get_slider_verification_key(value))
+    if isinstance(payload, dict) and isinstance(payload.get("token"), str):
+        return payload["token"]
+    _slider_memory_cleanup()
+    payload = _slider_memory.get(get_slider_verification_key(value))
+    token = payload.get("token") if isinstance(payload, dict) else None
+    return token if isinstance(token, str) else None
+
+
+def _aes_key(secret_key: str) -> bytes:
+    raw = secret_key.encode("utf-8")
+    if len(raw) not in {16, 24, 32}:
+        raise ValueError("AES key must be 16, 24, or 32 bytes")
+    return raw
+
+
+def _aes_encrypt(value: str, secret_key: str) -> str:
+    raw = value.encode("utf-8")
+    padding = 16 - len(raw) % 16
+    padded = raw + bytes([padding]) * padding
+    encryptor = Cipher(algorithms.AES(_aes_key(secret_key)), modes.ECB()).encryptor()
+    encrypted = encryptor.update(padded) + encryptor.finalize()
+    return base64.b64encode(encrypted).decode("ascii")
+
+
+def _aes_decrypt(value: str, secret_key: str) -> str | None:
+    try:
+        decryptor = Cipher(
+            algorithms.AES(_aes_key(secret_key)), modes.ECB()
+        ).decryptor()
+        decrypted = decryptor.update(base64.b64decode(value)) + decryptor.finalize()
+        padding = decrypted[-1]
+        if (
+            padding < 1
+            or padding > 16
+            or decrypted[-padding:] != bytes([padding]) * padding
+        ):
+            return None
+        return decrypted[:-padding].decode("utf-8")
+    except ValueError, UnicodeDecodeError, base64.binascii.Error:
+        return None
+
+
+def _image_base64(image: Image.Image) -> str:
+    output = BytesIO()
+    image.save(output, format="PNG", optimize=True)
+    return base64.b64encode(output.getvalue()).decode("ascii")
+
+
+def _piece_mask() -> Image.Image:
+    mask = Image.new("L", (SLIDER_PIECE_SIZE, SLIDER_PIECE_SIZE), 0)
+    draw = ImageDraw.Draw(mask)
+    margin = 4
+    draw.rounded_rectangle(
+        (margin, margin, SLIDER_PIECE_SIZE - margin, SLIDER_PIECE_SIZE - margin),
+        radius=9,
+        fill=255,
+    )
+    draw.ellipse((SLIDER_PIECE_SIZE - 3, 15, SLIDER_PIECE_SIZE + 13, 33), fill=255)
+    return mask
+
+
+def _build_slider_images(target_x: int) -> tuple[str, str]:
+    image = Image.new("RGB", (SLIDER_IMAGE_WIDTH, SLIDER_IMAGE_HEIGHT))
+    pixels = image.load()
+    for y in range(SLIDER_IMAGE_HEIGHT):
+        for x in range(SLIDER_IMAGE_WIDTH):
+            pixels[x, y] = (
+                20 + int(45 * x / SLIDER_IMAGE_WIDTH),
+                100 + int(65 * y / SLIDER_IMAGE_HEIGHT),
+                180 + int(45 * (1 - x / SLIDER_IMAGE_WIDTH)),
+            )
+    draw = ImageDraw.Draw(image, "RGBA")
+    for index in range(12):
+        x = (index * 73 + 29) % SLIDER_IMAGE_WIDTH
+        y = (index * 47 + 17) % SLIDER_IMAGE_HEIGHT
+        radius = 14 + (index % 4) * 7
+        draw.ellipse(
+            (x - radius, y - radius, x + radius, y + radius),
+            fill=(255, 255, 255, 18),
+            outline=(255, 255, 255, 85),
+            width=2,
+        )
+    mask = _piece_mask()
+    piece = image.crop(
+        (
+            target_x,
+            SLIDER_PIECE_Y,
+            target_x + SLIDER_PIECE_SIZE,
+            SLIDER_PIECE_Y + SLIDER_PIECE_SIZE,
+        )
+    ).convert("RGBA")
+    piece.putalpha(mask)
+    gap = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    gap_mask = Image.new("L", image.size, 0)
+    gap_mask.paste(mask, (target_x, SLIDER_PIECE_Y))
+    gap_draw = ImageDraw.Draw(gap)
+    gap_draw.bitmap((0, 0), gap_mask, fill=(22, 35, 63, 110))
+    image = Image.alpha_composite(image.convert("RGBA"), gap)
+    gap_outline = ImageDraw.Draw(image)
+    gap_outline.rounded_rectangle(
+        (
+            target_x + 4,
+            SLIDER_PIECE_Y + 4,
+            target_x + SLIDER_PIECE_SIZE - 4,
+            SLIDER_PIECE_Y + SLIDER_PIECE_SIZE - 4,
+        ),
+        radius=9,
+        outline=(255, 255, 255, 210),
+        width=2,
+    )
+    return _image_base64(image), _image_base64(piece)
+
+
+def _slider_error(message: str) -> dict[str, Any]:
+    return {"repCode": "6110", "repMsg": message, "repData": None}
+
+
+def validate_slider_captcha_verification(value: str | None) -> bool:
+    if not value:
+        return False
+    token = _slider_token_for_verification(value)
+    if not token:
+        return False
+    payload = _slider_get(token)
+    if not payload or payload.get("verified") is not True:
+        return False
+    valid = hmac.compare_digest(str(payload.get("verification", "")), value)
+    _slider_delete(token)
+    redis_cache.delete(get_slider_verification_key(value))
+    _slider_memory.pop(get_slider_verification_key(value), None)
+    return valid
 
 
 def is_login_rate_limited(request: Request, username: str) -> bool:
@@ -1021,6 +1226,72 @@ def get_login_captcha(request: Request, username: str) -> LoginCaptchaChallenge:
     return captcha
 
 
+@router.post("/system/captcha/get")
+def get_slider_captcha(body: dict[str, Any]) -> dict[str, Any]:
+    if not settings.LOGIN_SLIDER_CAPTCHA_ENABLED:
+        return _slider_error("Slider captcha is disabled")
+    if body.get("captchaType") not in {None, "blockPuzzle"}:
+        return _slider_error("Unsupported captcha type")
+    target_x = random.randint(150, SLIDER_IMAGE_WIDTH - SLIDER_PIECE_SIZE - 18)
+    original_image, jigsaw_image = _build_slider_images(target_x)
+    token = secrets.token_urlsafe(32)
+    secret_key = secrets.token_urlsafe(12)[:16]
+    expected_x = target_x * SLIDER_BAR_WIDTH / SLIDER_IMAGE_WIDTH
+    _slider_set(
+        token,
+        {
+            "target_x": target_x,
+            "expected_x": expected_x,
+            "secret_key": secret_key,
+            "verified": False,
+        },
+    )
+    return {
+        "repCode": "0000",
+        "repMsg": "success",
+        "repData": {
+            "originalImageBase64": original_image,
+            "jigsawImageBase64": jigsaw_image,
+            "token": token,
+            "secretKey": secret_key,
+            "imageWidth": SLIDER_IMAGE_WIDTH,
+            "imageHeight": SLIDER_IMAGE_HEIGHT,
+            "pieceWidth": SLIDER_PIECE_SIZE,
+            "pieceY": SLIDER_PIECE_Y,
+        },
+    }
+
+
+@router.post("/system/captcha/check")
+def check_slider_captcha(body: dict[str, Any]) -> dict[str, Any]:
+    if not settings.LOGIN_SLIDER_CAPTCHA_ENABLED:
+        return _slider_error("Slider captcha is disabled")
+    token = str(body.get("token") or "")
+    point_json = str(body.get("pointJson") or "")
+    payload = _slider_get(token)
+    if not payload or not point_json:
+        return _slider_error("Captcha is invalid or expired")
+    point_text = _aes_decrypt(point_json, str(payload.get("secret_key", "")))
+    if point_text is None:
+        return _slider_error("Captcha coordinates are invalid")
+    try:
+        point = json.loads(point_text)
+        valid = (
+            abs(float(point["x"]) - float(payload["expected_x"])) <= 6
+            and abs(float(point.get("y", 5)) - 5) <= 5
+        )
+    except KeyError, TypeError, ValueError, json.JSONDecodeError:
+        valid = False
+    if not valid:
+        return _slider_error("Captcha coordinates are invalid")
+    payload["verified"] = True
+    verification = _aes_encrypt(f"{token}---{point_text}", str(payload["secret_key"]))
+    payload["verification"] = verification
+    _slider_set(token, payload)
+    _slider_store_verification(verification, token)
+    return {"repCode": "0000", "repMsg": "success", "repData": None}
+
+
 @router.post("/login/access-token")
 def login_access_token(
     request: Request,
@@ -1040,6 +1311,20 @@ def login_access_token(
             failure_reason=LOGIN_RATE_LIMIT_MESSAGE,
         )
         raise HTTPException(status_code=429, detail=LOGIN_RATE_LIMIT_MESSAGE)
+    if (
+        settings.LOGIN_SLIDER_CAPTCHA_ENABLED
+        and not validate_slider_captcha_verification(form_data.captcha_verification)
+    ):
+        create_login_log(
+            session=session,
+            request=request,
+            email=login_identifier,
+            status="fail",
+            failure_reason=LOGIN_SLIDER_CAPTCHA_INVALID_MESSAGE,
+        )
+        raise HTTPException(
+            status_code=400, detail=LOGIN_SLIDER_CAPTCHA_INVALID_MESSAGE
+        )
     if requires_login_captcha(request, login_identifier) and not validate_login_captcha(
         request,
         login_identifier,

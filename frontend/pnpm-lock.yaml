@@ -1373,6 +1373,9 @@ importers:
       '@vueuse/integrations':
         specifier: 'catalog:'
         version: 14.3.0(async-validator@4.2.5)(axios@1.18.0)(focus-trap@8.2.1)(nprogress@0.2.0)(qrcode@1.5.4)(sortablejs@1.15.7)(vue@3.5.38(typescript@6.0.3))
+      crypto-js:
+        specifier: 4.2.0
+        version: 4.2.0
       json-bigint:
         specifier: 'catalog:'
         version: 1.0.0
@@ -1395,6 +1398,9 @@ importers:
         specifier: 'catalog:'
         version: 6.7.1(vue@3.5.38(typescript@6.0.3))
     devDependencies:
+      '@types/crypto-js':
+        specifier: 4.2.2
+        version: 4.2.2
       '@types/json-bigint':
         specifier: 'catalog:'
         version: 1.0.4
@@ -5418,6 +5424,9 @@ packages:
 
   '@types/chai@5.2.3':
     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
+
+  '@types/crypto-js@4.2.2':
+    resolution: {integrity: sha512-sDOLlVbHhXpAUAL0YHDUUwDZf3iN4Bwi4W6a0W0b+QcAezUbRtH4FVb+9J4h+XFPW7l/gQ9F8qC7P+Ec4k8QVQ==}
 
   '@types/deep-eql@4.0.2':
     resolution: {integrity: sha512-c9h9dVVMigMPc4bwTvC5dxqtqJZwQPePsWjPlpSOnojbor6pGqdk541lfA7AqFQr5pB1BRdq0juY9db81BwyFw==}
@@ -14340,6 +14349,8 @@ snapshots:
     dependencies:
       '@types/deep-eql': 4.0.2
       assertion-error: 2.0.1
+
+  '@types/crypto-js@4.2.2': {}
 
   '@types/deep-eql@4.0.2': {}
 

@@ -18,6 +18,7 @@ class CacheNamespace:
     DICTIONARY_ITEMS = "dictionary-items"
     LOGIN_RATE_LIMIT = "login-rate-limit"
     LOGIN_CAPTCHA = "login-captcha"
+    LOGIN_SLIDER_CAPTCHA = "login-slider-captcha"
     SMS_VERIFICATION = "sms-verification"
     QR_CODE_LOGIN = "qr-code-login"
 

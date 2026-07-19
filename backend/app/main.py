@@ -33,6 +33,7 @@ ERROR_CODE_BY_MESSAGE = {
     "Too many failed login attempts. Please try again later.": "AUTH_RATE_LIMITED",
     "Captcha verification required.": "AUTH_CAPTCHA_REQUIRED",
     "Captcha is invalid or expired.": "AUTH_CAPTCHA_INVALID",
+    "Slider captcha verification is invalid or expired.": "AUTH_SLIDER_CAPTCHA_INVALID",
     "SMS verification code is invalid or expired.": "AUTH_SMS_CODE_INVALID",
     "SMS verification is unavailable.": "AUTH_SMS_UNAVAILABLE",
     "Incorrect mobile or verification code": "AUTH_SMS_INVALID",

@@ -29,10 +29,26 @@ export namespace AuthApi {
   export interface LoginParams {
     captcha_code?: string;
     captcha_id?: string;
+    captcha_verification?: string;
     mfa_code?: string;
     password?: string;
     tenant_code?: string;
     username?: string;
+  }
+
+  export interface SliderCaptchaResponse {
+    repCode: string;
+    repData?: null | {
+      imageHeight: number;
+      imageWidth: number;
+      jigsawImageBase64: string;
+      originalImageBase64: string;
+      pieceWidth: number;
+      pieceY: number;
+      secretKey: string;
+      token: string;
+    };
+    repMsg?: string;
   }
 
   /** 登录接口返回值 */
@@ -128,6 +144,9 @@ export async function loginApi(data: AuthApi.LoginParams) {
   if (data.captcha_id) {
     formData.set('captcha_id', data.captcha_id);
   }
+  if (data.captcha_verification) {
+    formData.set('captcha_verification', data.captcha_verification);
+  }
   if (data.captcha_code) {
     formData.set('captcha_code', data.captcha_code);
   }
@@ -212,6 +231,24 @@ export function getLoginCaptchaApi(username: string) {
       username,
     },
   });
+}
+
+export function getSliderCaptchaApi(data: { captchaType: 'blockPuzzle' }) {
+  return baseRequestClient.post<AuthApi.SliderCaptchaResponse>(
+    '/system/captcha/get',
+    data,
+  );
+}
+
+export function checkSliderCaptchaApi(data: {
+  captchaType: 'blockPuzzle';
+  pointJson: string;
+  token: string;
+}) {
+  return baseRequestClient.post<AuthApi.SliderCaptchaResponse>(
+    '/system/captcha/check',
+    data,
+  );
 }
 
 export function sendLoginSmsCodeApi(data: AuthApi.SendSmsCodePayload) {

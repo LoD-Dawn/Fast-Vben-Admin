@@ -19,6 +19,7 @@ SENSITIVE_PATH_PARTS = (
     "/login/enterprise-oidc/exchange",
     "/password-recovery",
     "/reset-password",
+    "/system/captcha/",
 )
 
 

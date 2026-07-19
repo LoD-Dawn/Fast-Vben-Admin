@@ -12,6 +12,14 @@ from tests.utils.user import authentication_token_from_email
 from tests.utils.utils import get_superuser_token_headers
 
 
+@pytest.fixture(scope="session", autouse=True)
+def disable_slider_captcha() -> Generator[None]:
+    original = settings.LOGIN_SLIDER_CAPTCHA_ENABLED
+    settings.LOGIN_SLIDER_CAPTCHA_ENABLED = False
+    yield
+    settings.LOGIN_SLIDER_CAPTCHA_ENABLED = original
+
+
 def cleanup_test_dictionaries(session: Session) -> None:
     test_types = session.exec(
         select(DictionaryType).where(DictionaryType.name == "测试字典")

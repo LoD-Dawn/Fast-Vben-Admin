@@ -191,6 +191,8 @@ docker compose -f compose.yml -f compose.production.yml up -d --build
 - [API 契约](./docs/api-contract.md)
 - [RBAC 权限](./docs/rbac.md)
 - [模块开发指南](./docs/module-guide.md)
+- [模块化产品架构规划](./docs/modular-product-architecture.md)
+- [架构决策记录](./docs/adr/README.md)
 - [企业 OIDC 配置](./docs/enterprise-oidc.md)
 - [监控说明](./docs/monitoring.md)
 - [常见问题](./docs/faq.md)
