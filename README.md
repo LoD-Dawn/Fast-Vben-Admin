@@ -195,6 +195,14 @@ docker compose -f compose.yml -f compose.production.yml up -d --build
 - [监控说明](./docs/monitoring.md)
 - [常见问题](./docs/faq.md)
 
+## 支持项目
+
+如果这个项目对你有所帮助，欢迎请我喝杯咖啡。你的支持会成为持续维护和改进项目的动力，感谢每一份鼓励。
+
+<p align="center">
+  <img src="./docs/assets/wechat-pay.jpg" alt="微信收款码" width="280" />
+</p>
+
 ## 致谢
 
 本项目基于并参考 [Full Stack FastAPI Template](https://github.com/fastapi/full-stack-fastapi-template) 和 [Vue Vben Admin](https://github.com/vbenjs/vue-vben-admin) 的架构与实践。

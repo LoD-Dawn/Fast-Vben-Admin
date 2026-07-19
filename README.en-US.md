@@ -184,6 +184,14 @@ See [deployment](./docs/deployment.md) for production variables, migrations, per
 - [Monitoring](./docs/monitoring.md)
 - [FAQ](./docs/faq.md)
 
+## Support the Project
+
+If this project has been helpful to you, consider buying me a coffee. Your support helps keep the project maintained and improving. Thank you for every contribution.
+
+<p align="center">
+  <img src="./docs/assets/wechat-pay.jpg" alt="WeChat Pay QR code" width="280" />
+</p>
+
 ## Acknowledgements
 
 This project builds on ideas and architecture from [Full Stack FastAPI Template](https://github.com/fastapi/full-stack-fastapi-template) and [Vue Vben Admin](https://github.com/vbenjs/vue-vben-admin).
