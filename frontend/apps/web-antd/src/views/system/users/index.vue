@@ -202,42 +202,47 @@ onMounted(loadDepartments);
   <Page auto-content-height>
     <FormDrawer @success="onRefresh" />
     <ImportModal @success="onRefresh" />
-    <div class="flex size-full">
-      <Card :bordered="false" class="dept-tree-card w-1/6 min-w-[220px]">
+    <div class="flex size-full min-h-0">
+      <Card
+        :bordered="false"
+        class="dept-tree-card flex h-full min-h-0 w-1/6 min-w-[220px] flex-col"
+      >
         <InputSearch
           v-model:value="deptSearchValue"
           allow-clear
-          class="mb-3"
+          class="mb-3 shrink-0"
           :placeholder="$t('system.user.placeholder')"
         />
-        <div
-          class="dept-tree-all mb-1 cursor-pointer py-1 text-sm"
-          :class="{ 'dept-tree-all--active': !selectedDeptId }"
-          @click="selectDept()"
-        >
-          {{ $t('system.dept.list') }}
+        <div class="dept-tree-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
+          <div
+            class="dept-tree-all mb-1 cursor-pointer py-1 text-sm"
+            :class="{ 'dept-tree-all--active': !selectedDeptId }"
+            @click="selectDept()"
+          >
+            {{ $t('system.dept.list') }}
+          </div>
+          <Tree
+            v-model="selectedDeptId"
+            class="dept-tree"
+            :default-expanded-level="2"
+            label-field="name"
+            :show-icon="false"
+            :transition="false"
+            value-field="id"
+            :tree-data="deptTreeData"
+            @select="selectDept"
+          >
+            <template #node="{ value }">
+              <span class="dept-tree-node">
+                <IconifyIcon
+                  class="dept-tree-node__icon"
+                  :icon="getDeptNodeIcon(value)"
+                />
+                <span class="dept-tree-node__label">{{ value.name }}</span>
+              </span>
+            </template>
+          </Tree>
         </div>
-        <Tree
-          v-model="selectedDeptId"
-          class="dept-tree"
-          :default-expanded-level="2"
-          label-field="name"
-          :show-icon="false"
-          :transition="false"
-          value-field="id"
-          :tree-data="deptTreeData"
-          @select="selectDept"
-        >
-          <template #node="{ value }">
-            <span class="dept-tree-node">
-              <IconifyIcon
-                class="dept-tree-node__icon"
-                :icon="getDeptNodeIcon(value)"
-              />
-              <span class="dept-tree-node__label">{{ value.name }}</span>
-            </span>
-          </template>
-        </Tree>
       </Card>
 
       <div class="ml-4 w-5/6 min-w-0">
@@ -269,6 +274,10 @@ onMounted(loadDepartments);
 
 <style scoped>
 .dept-tree-card :deep(.ant-card-body) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
   padding: 12px;
 }
 
