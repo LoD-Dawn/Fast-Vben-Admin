@@ -13,6 +13,11 @@
 | [ADR-0007](./0007-platform-master-data-lifecycle.md) | 平台主数据生命周期与跨模块引用 | Proposed |
 | [ADR-0008](./0008-module-openapi-client-generation.md) | 模块级 OpenAPI 与前端客户端生成 | Proposed |
 | [ADR-0009](./0009-module-public-contracts-and-dependency-boundaries.md) | 模块公开契约与依赖边界 | Proposed |
+| [ADR-0010](./0010-platform-deployment-boundary.md) | Platform 交付边界与内部限界上下文 | Proposed |
+| [ADR-0011](./0011-edition-artifact-and-manifest-v2.md) | Edition 制品策略与 Build Manifest v2 | Proposed |
+| [ADR-0012](./0012-outbox-delivery-inbox-state-machine.md) | Outbox Delivery 与 Inbox 状态机 | Proposed |
+| [ADR-0013](./0013-tenant-unit-of-work-and-rls.md) | TenantUnitOfWork 与 PostgreSQL RLS | Proposed |
+| [ADR-0014](./0014-deployment-readiness-and-runtime-degradation.md) | 部署门禁、Readiness 与运行期降级 | Proposed |
 
 状态含义：
 

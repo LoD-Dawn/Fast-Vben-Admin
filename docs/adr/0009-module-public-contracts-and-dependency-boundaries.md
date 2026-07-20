@@ -1,6 +1,7 @@
 # ADR-0009：模块公开契约与依赖边界
 
 - 状态：Proposed
+- 实施细化：[ADR-0010](./0010-platform-deployment-boundary.md) 固定 Platform 的交付和内部代码边界
 - 日期：2026-07-20
 - 关联文档：[模块化产品架构规划](../modular-product-architecture.md)
 - 补充关系：细化 [ADR-0006](./0006-module-lifecycle-and-events.md) 的能力适配器和事件契约，并约束 [ADR-0007](./0007-platform-master-data-lifecycle.md) 的平台主数据访问方式

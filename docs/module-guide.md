@@ -1,6 +1,6 @@
 # 新增业务模块指南
 
-业务模块的边界、模块契约、产品发行版和部署组合见[模块化产品架构规划](./modular-product-architecture.md)，公开接口与依赖规则见 [ADR-0009](./adr/0009-module-public-contracts-and-dependency-boundaries.md)。本指南描述目标模块结构；现有集中式代码可以渐进迁移，但新业务模块不得继续扩大 `app.models`、`app.api.routes` 和集中式菜单种子。
+业务模块的边界、模块契约、产品发行版和部署组合见[模块化产品架构规划](./modular-product-architecture.md)，具体实施顺序和验收门禁见[模块化架构实施基线](./modular-architecture-implementation.md)，公开接口与依赖规则见 [ADR-0009](./adr/0009-module-public-contracts-and-dependency-boundaries.md)。本指南描述目标模块结构；现有集中式代码可以渐进迁移，但新业务模块不得继续扩大 `app.models`、`app.api.routes` 和集中式菜单种子。
 
 以 Items 为范例，一个完整模块应包含：
 

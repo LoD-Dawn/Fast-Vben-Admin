@@ -1,6 +1,7 @@
 # ADR-0006：模块生命周期与跨模块事件可靠性
 
 - 状态：Proposed
+- 实施细化：[ADR-0012](./0012-outbox-delivery-inbox-state-machine.md) 和 [ADR-0014](./0014-deployment-readiness-and-runtime-degradation.md)
 - 日期：2026-07-19
 - 关联文档：[模块化产品架构规划](../modular-product-architecture.md)
 

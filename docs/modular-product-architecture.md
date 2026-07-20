@@ -6,6 +6,8 @@
 
 关联架构决策见[架构决策记录索引](./adr/README.md)。本规划新增的 ADR-0003 至 ADR-0009 状态为 `Proposed`，通过 Items 模块验证后再转为 `Accepted`。
 
+具体改造顺序、强制工程规则、CI 门禁和阶段验收标准见[模块化架构实施基线](./modular-architecture-implementation.md)。本文负责产品架构目标，实施基线负责把目标拆成可交付任务；两者与 ADR 冲突时以已接受 ADR 为准。
+
 ## 1. 背景
 
 Fast Vben Admin 当前已经具备统一登录、多租户、组织、RBAC、动态菜单、文件、消息、审计和 OpenAPI 契约等平台能力。后续计划在此基础上增加 IOA、ERP 等业务系统，并支持以下部署形态：

@@ -1,6 +1,7 @@
 # ADR-0005：多模块数据库迁移编排
 
 - 状态：Proposed
+- 实施细化：[ADR-0014](./0014-deployment-readiness-and-runtime-degradation.md) 区分部署失败和运行期降级
 - 日期：2026-07-19
 - 关联文档：[模块化产品架构规划](../modular-product-architecture.md)
 - 修订关系：接受后部分修订 [ADR-0002](./0002-multi-tenancy-shared-schema.md) 中“shared schema”的范围

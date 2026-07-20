@@ -2,6 +2,8 @@
 
 Status: Accepted
 
+Implementation refinement: [ADR-0013](./0013-tenant-unit-of-work-and-rls.md) defines TenantUnitOfWork, database roles, and RLS.
+
 Date: 2026-07-14
 
 ## Context

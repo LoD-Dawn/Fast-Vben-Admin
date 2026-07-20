@@ -1,6 +1,7 @@
 # ADR-0003：Edition 与模块状态的唯一事实源
 
 - 状态：Proposed
+- 实施细化：[ADR-0011](./0011-edition-artifact-and-manifest-v2.md) 定义制品策略和 Manifest v2；[ADR-0014](./0014-deployment-readiness-and-runtime-degradation.md) 区分 rollout 门禁与实例 readiness
 - 日期：2026-07-19
 - 关联文档：[模块化产品架构规划](../modular-product-architecture.md)
 

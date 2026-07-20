@@ -1,6 +1,7 @@
 # ADR-0008：模块级 OpenAPI 与前端客户端生成
 
 - 状态：Proposed
+- 实施细化：[ADR-0011](./0011-edition-artifact-and-manifest-v2.md) 选择模块客户端提交仓库、组合契约仅用于验证
 - 日期：2026-07-19
 - 关联文档：[模块化产品架构规划](../modular-product-architecture.md)
 
@@ -67,4 +68,3 @@ pnpm generate:api --edition suite
 - 每个模块客户端都能仅从该模块子契约独立生成。
 - 组合 OpenAPI 不存在重复 operation ID、Schema 名或悬空 `$ref`。
 - 后端 API 变更但未更新对应模块客户端时 CI 失败。
-
