@@ -3,16 +3,17 @@ from dataclasses import dataclass
 
 from sqlmodel import Session, col, or_, select
 
-from app.models import (
+from app.core.clock import get_datetime_utc
+from app.core.tenancy_constants import (  # noqa: F401
+    DEFAULT_TENANT_CODE,
+    DEFAULT_TENANT_ID,
+)
+from app.platform.core.tenancy_models import (
     Tenant,
     TenantLifecycleStatus,
     TenantMembership,
     TenantProfile,
-    get_datetime_utc,
 )
-
-DEFAULT_TENANT_ID = uuid.UUID("00000000-0000-4000-8000-000000000001")
-DEFAULT_TENANT_CODE = "default"
 
 
 @dataclass(frozen=True)

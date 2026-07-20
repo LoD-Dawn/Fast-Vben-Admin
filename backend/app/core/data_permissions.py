@@ -4,14 +4,14 @@ from typing import Any
 from sqlalchemy import or_, true
 from sqlmodel import Session, col, select
 
-from app.models import (
+from app.platform.core.authorization_models import (
     Department,
     Role,
     RoleDataScopeDepartment,
-    TenantMembership,
-    User,
     UserRole,
 )
+from app.platform.core.identity_models import User
+from app.platform.core.tenancy_models import TenantMembership
 
 
 def _get_descendant_department_ids(

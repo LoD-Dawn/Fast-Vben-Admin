@@ -12,7 +12,9 @@ from app.api.deps import (
     require_permission,
 )
 from app.core.cache import CacheNamespace, redis_cache
-from app.models import (
+from app.core.clock import get_datetime_utc
+from app.modules.access import filter_module_scoped_permissions
+from app.platform.core.authorization_models import (
     Menu,
     MenuCreate,
     MenuPublic,
@@ -21,9 +23,7 @@ from app.models import (
     Role,
     RoleMenu,
     UserRole,
-    get_datetime_utc,
 )
-from app.modules.access import filter_module_scoped_permissions
 
 router = APIRouter(prefix="/menus", tags=["menus"])
 

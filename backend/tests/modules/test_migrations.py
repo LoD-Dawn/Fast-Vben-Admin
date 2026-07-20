@@ -1,7 +1,9 @@
 import pytest
+from alembic.script import ScriptDirectory
 from sqlalchemy import text
+from sqlmodel import Session
 
-from app.core.db import engine
+from app.core.database import engine
 from app.models import ModuleObservedState
 from app.modules.migrations import (
     migrate_edition,
@@ -20,7 +22,12 @@ def test_module_migration_configuration_is_namespaced() -> None:
     assert items_config.get_main_option("version_table_schema") == "public"
 
 
-def test_suite_migration_records_independent_items_revision() -> None:
+def test_suite_migration_records_independent_items_revision(db: Session) -> None:
+    _ = db
+    items_config = module_alembic_config("items")
+    expected_items_head = ScriptDirectory.from_config(items_config).get_current_head()
+    assert expected_items_head is not None
+
     with engine.begin() as connection:
         connection.execute(
             text("UPDATE moduleregistry SET observed_state = 'bundled' WHERE code = 'items'")
@@ -33,7 +40,7 @@ def test_suite_migration_records_independent_items_revision() -> None:
         ).one() == ("items.item", None)
         assert connection.execute(
             text("SELECT version_num FROM public.alembic_version_items")
-        ).scalar_one() == "items_rename_tenant_index"
+        ).scalar_one() == expected_items_head
         assert connection.execute(
             text("SELECT actual_revision FROM moduleregistry WHERE code = 'items'")
         ).scalar_one() == "items-head"
@@ -71,7 +78,10 @@ def test_suite_migration_records_independent_items_revision() -> None:
         ).scalar_one() == event_count
 
 
-def test_failed_module_migration_marks_only_the_failed_module_degraded(monkeypatch) -> None:
+def test_failed_module_migration_marks_only_the_failed_module_degraded(
+    monkeypatch, db: Session
+) -> None:
+    _ = db
     from app.modules import migrations
 
     original_upgrade = migrations.command.upgrade

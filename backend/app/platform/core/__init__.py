@@ -1,0 +1,1 @@
+"""Platform core bounded contexts."""

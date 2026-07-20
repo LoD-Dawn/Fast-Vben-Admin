@@ -2,14 +2,13 @@ from fastapi import APIRouter
 
 from app.api.routes import private
 from app.core.config import settings
-from app.modules.manifest import build_manifest, load_manifest_file
+from app.modules.access import get_runtime_manifest
+from app.modules.manifest import build_manifest
 from app.modules.registry import get_module_definitions, get_module_routers
 
 
 def get_current_manifest():
-    if settings.BUILD_MANIFEST_PATH is not None:
-        return load_manifest_file(settings.BUILD_MANIFEST_PATH)
-    return build_manifest(edition=settings.APP_EDITION)
+    return get_runtime_manifest()
 
 
 def create_api_router(*, edition: str | None = None) -> APIRouter:

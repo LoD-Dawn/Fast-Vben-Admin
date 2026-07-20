@@ -16,8 +16,8 @@ from app.models import (
     FileAsset,
     LoginLog,
     OperationLog,
-    User,
 )
+from app.platform.core.identity_models import User
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 

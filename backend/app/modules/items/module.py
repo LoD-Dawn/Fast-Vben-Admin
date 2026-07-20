@@ -1,9 +1,13 @@
 from sqlmodel import Session, func, select
 
-from app.modules.contracts import MigrationSpec, ModuleDefinition
+from app.modules.contracts import (
+    EventContract,
+    MigrationSpec,
+    ModuleDefinition,
+    ReferenceGuardSpec,
+)
 from app.modules.items.infrastructure.models import Item
 from app.modules.items.routes import router
-from app.modules.references import register_reference_guard
 
 
 def count_item_references(
@@ -17,8 +21,6 @@ def count_item_references(
     return int(session.exec(statement).one())
 
 
-register_reference_guard("items", count_item_references)
-
 definition = ModuleDefinition(
     code="items",
     version="1.0.0",
@@ -31,7 +33,10 @@ definition = ModuleDefinition(
         schema="items",
         owned_tables=("item",),
     ),
-    reference_guards=("user",),
+    reference_guards=(ReferenceGuardSpec("user", count_item_references),),
+    event_publishers=(
+        EventContract("items.item.changed", 1),
+    ),
     menus=(
         "business:item:list",
         "business:item:create",

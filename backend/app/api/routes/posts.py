@@ -10,16 +10,17 @@ from app.api.deps import (
     normalize_pagination,
     require_permission,
 )
-from app.models import (
+from app.core.clock import get_datetime_utc
+from app.modules.outbox import enqueue_event
+from app.modules.platform_events import PostArchivedV1
+from app.platform.core.authorization_models import (
     Post,
     PostCreate,
     PostPublic,
     PostsPublic,
     PostUpdate,
     UserPost,
-    get_datetime_utc,
 )
-from app.modules.outbox import enqueue_event
 
 router = APIRouter(prefix="/posts", tags=["posts"])
 
@@ -182,11 +183,12 @@ def delete_post(
         event_type="platform.post.archived",
         tenant_id=tenant_context.tenant_id,
         aggregate_id=str(post.id),
-        payload={
-            "post_id": str(post.id),
-            "tenant_id": str(tenant_context.tenant_id),
-            "name": post.name,
-        },
+        payload=PostArchivedV1(
+            post_id=post.id,
+            tenant_id=tenant_context.tenant_id,
+            name=post.name,
+        ).model_dump(mode="json"),
+        allow_zero_subscribers=True,
     )
     session.commit()
     return Response(status_code=204)

@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -51,6 +51,18 @@ function getEdition() {
   return edition;
 }
 
+function getManifestPath() {
+  const manifestFlag = process.argv.indexOf('--manifest');
+  if (manifestFlag === -1) {
+    return undefined;
+  }
+  const manifestPath = process.argv[manifestFlag + 1];
+  if (!manifestPath || manifestPath.startsWith('-')) {
+    throw new Error('--manifest requires a file path');
+  }
+  return resolve(rootDir, manifestPath);
+}
+
 function extractSpec(openapi, predicate) {
   return {
     ...openapi,
@@ -79,16 +91,37 @@ function generateClient(input, output, edition) {
 }
 
 const edition = getEdition();
+const manifestPath = getManifestPath();
 const tempDirectory = mkdtempSync(join(tmpdir(), 'fast-vben-openapi-'));
-const manifestJson = run(
+const manifestJson = manifestPath
+  ? readFileSync(manifestPath, 'utf8')
+  : run(
+      'uv',
+      [
+        'run',
+        'python',
+        '-c',
+        'import json; from app.modules.manifest import build_manifest; print(json.dumps(build_manifest(edition="' +
+          edition +
+          '").model_dump()))',
+      ],
+      {
+        capture: true,
+        cwd: backendDir,
+        env: { ...process.env, APP_EDITION: edition },
+      },
+    );
+const manifest = JSON.parse(manifestJson);
+if (manifest.edition !== edition) {
+  throw new Error(`Manifest edition ${manifest.edition} does not match ${edition}`);
+}
+const prefixesJson = run(
   'uv',
   [
     'run',
     'python',
     '-c',
-    'import json; from app.modules.manifest import build_manifest; from app.modules.registry import get_module_definitions; manifest = build_manifest(edition="' +
-      edition +
-      '"); definitions = get_module_definitions(); print(json.dumps({"manifest": manifest.model_dump(), "prefixes": {code: definition.api_prefix for code, definition in definitions.items()}}))',
+    'import json; from app.modules.registry import get_module_definitions; print(json.dumps({code: definition.api_prefix for code, definition in get_module_definitions().items()}))',
   ],
   {
     capture: true,
@@ -96,7 +129,7 @@ const manifestJson = run(
     env: { ...process.env, APP_EDITION: edition },
   },
 );
-const { manifest, prefixes } = JSON.parse(manifestJson);
+const prefixes = JSON.parse(prefixesJson);
 const openapiJson = run(
   'uv',
   [

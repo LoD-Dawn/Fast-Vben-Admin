@@ -5,16 +5,20 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, delete, select
 
 from app.core.config import settings
-from app.core.db import engine, init_db
+from app.core.database import engine
 from app.main import app
 from app.models import (
     DictionaryItem,
     DictionaryType,
-    EventConsumerReceipt,
+    EventDelivery,
+    InboxReceipt,
     OutboxEvent,
+    TenantPlan,
+    TenantPlanModule,
     User,
 )
 from app.modules.items.infrastructure.models import Item
+from app.platform.bootstrap import init_db
 from tests.utils.user import authentication_token_from_email
 from tests.utils.utils import get_superuser_token_headers
 
@@ -41,17 +45,38 @@ def cleanup_test_dictionaries(session: Session) -> None:
     session.commit()
 
 
-@pytest.fixture(scope="session", autouse=True)
+def ensure_test_items_entitlement(session: Session) -> None:
+    """Tests explicitly model an operator-granted Items entitlement."""
+    plan = session.exec(select(TenantPlan).where(TenantPlan.code == "standard")).one()
+    mapping = session.get(TenantPlanModule, (plan.id, "items"))
+    if mapping is None:
+        session.add(
+            TenantPlanModule(
+                plan_id=plan.id,
+                module_code="items",
+                is_enabled=True,
+            )
+        )
+    else:
+        mapping.is_enabled = True
+        session.add(mapping)
+    session.commit()
+
+
+@pytest.fixture(scope="session")
 def db() -> Generator[Session]:
     with Session(engine) as session:
         init_db(session)
+        ensure_test_items_entitlement(session)
         cleanup_test_dictionaries(session)
-        session.execute(delete(EventConsumerReceipt))
+        session.execute(delete(EventDelivery))
+        session.execute(delete(InboxReceipt))
         session.execute(delete(OutboxEvent))
         session.commit()
         yield session
         cleanup_test_dictionaries(session)
-        session.execute(delete(EventConsumerReceipt))
+        session.execute(delete(EventDelivery))
+        session.execute(delete(InboxReceipt))
         session.execute(delete(OutboxEvent))
         statement = delete(Item)
         session.execute(statement)
@@ -61,7 +86,8 @@ def db() -> Generator[Session]:
 
 
 @pytest.fixture(scope="module")
-def client() -> Generator[TestClient]:
+def client(db: Session) -> Generator[TestClient]:
+    _ = db  # Ensure database initialization precedes application lifespan startup.
     with TestClient(app) as c:
         yield c
 

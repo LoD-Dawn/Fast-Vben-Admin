@@ -3,8 +3,9 @@ from dataclasses import dataclass
 
 from sqlmodel import Session, select
 
-from app.models import CapabilityBinding, CapabilityBindingStatus, get_datetime_utc
+from app.core.clock import get_datetime_utc
 from app.modules.contracts import CapabilityRequirement, ModuleDefinition
+from app.platform.core.runtime_models import CapabilityBinding, CapabilityBindingStatus
 
 
 class CapabilityConfigurationError(ValueError):

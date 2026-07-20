@@ -7,12 +7,13 @@ from alembic.script import ScriptDirectory
 from sqlalchemy import text
 from sqlmodel import Session
 
-from app.core.db import engine
-from app.models import ModuleObservedState, ModuleRegistry
-from app.modules.access import ensure_module_runtime, set_module_observed_state
+from app.core.database import engine
+from app.modules.access import reconcile_module_runtime, set_module_observed_state
 from app.modules.manifest import build_manifest
 from app.modules.outbox import enqueue_event
+from app.modules.platform_events import ModuleObservedStateChangedV1
 from app.modules.registry import get_module_definitions
+from app.platform.core.runtime_models import ModuleObservedState, ModuleRegistry
 
 logger = logging.getLogger(__name__)
 MIGRATION_LOCK_KEY = 921_735_021
@@ -69,13 +70,14 @@ def transition_module_observed_state(
             event_type="platform.module.observed_state.changed",
             tenant_id=None,
             aggregate_id=registry.code,
-            payload={
-                "module_code": registry.code,
-                "previous_state": previous_state,
-                "observed_state": observed_state,
-                "actual_revision": actual_revision,
-                "reason": reason,
-            },
+            payload=ModuleObservedStateChangedV1(
+                module_code=registry.code,
+                previous_state=previous_state,
+                observed_state=observed_state,
+                actual_revision=actual_revision,
+                reason=reason,
+            ).model_dump(mode="json"),
+            allow_zero_subscribers=True,
         )
 
 
@@ -104,7 +106,7 @@ def migrate_edition(*, edition: str) -> list[str]:
             if platform_needs_migration:
                 command.upgrade(platform_config, "head")
             with Session(bind=connection) as session:
-                ensure_module_runtime(session, manifest=manifest)
+                reconcile_module_runtime(session, manifest=manifest)
                 runtime_initialized = True
                 platform_registry = session.get(ModuleRegistry, "platform")
                 assert platform_registry is not None

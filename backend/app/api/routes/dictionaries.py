@@ -11,7 +11,8 @@ from app.api.deps import (
     require_permission,
 )
 from app.core.cache import CacheNamespace, redis_cache
-from app.models import (
+from app.core.clock import get_datetime_utc
+from app.platform.core.configuration_models import (
     DictionaryItem,
     DictionaryItemCreate,
     DictionaryItemPublic,
@@ -22,7 +23,6 @@ from app.models import (
     DictionaryTypePublic,
     DictionaryTypesPublic,
     DictionaryTypeUpdate,
-    get_datetime_utc,
 )
 
 router = APIRouter(tags=["dictionaries"])

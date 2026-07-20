@@ -30,6 +30,8 @@ jobs:
 
     env:
       ACCESS_TOKEN_EXPIRE_MINUTES: 11520
+      APP_RUNTIME_DB_PASSWORD: test-runtime-password
+      APP_RUNTIME_DB_USER: app_runtime
       BACKEND_CORS_ORIGINS: '["http://localhost:5173","http://localhost"]'
       DOMAIN: localhost
       EMAILS_FROM_EMAIL: info@example.com
@@ -63,7 +65,10 @@ jobs:
         working-directory: backend
         env:
           APP_EDITION: ${{ matrix.edition }}
-        run: uv run python -m app.modules.migrate --edition ${{ matrix.edition }}
+        run: |
+          uv run python -m app.platform.provision_db_roles
+          uv run python -m app.modules.migrate --edition ${{ matrix.edition }}
+          uv run python -m app.platform.provision_db_roles
 
       - name: Verify edition database ownership and startup state
         working-directory: backend
@@ -74,6 +79,6 @@ jobs:
           if [ "${{ matrix.edition }}" = "base" ]; then
             uv run python -c "from app.core.db import engine; from sqlalchemy import text; c = engine.connect(); assert c.execute(text(\"select to_regclass('items.item')\")).scalar_one() is None; c.close()"
           else
-            uv run python -c "from app.core.db import engine; from sqlalchemy import text; c = engine.connect(); assert c.execute(text(\"select to_regclass('items.item')\")).scalar_one() == 'items.item'; assert c.execute(text(\"select version_num from public.alembic_version_items\")).scalar_one() == 'items_rename_tenant_index'; c.close()"
+            uv run python -c "from alembic.script import ScriptDirectory; from app.core.db import engine; from app.modules.migrations import module_alembic_config; from sqlalchemy import text; config = module_alembic_config('items'); expected = ScriptDirectory.from_config(config).get_current_head(); c = engine.connect(); assert expected is not None; assert c.execute(text(\"select to_regclass('items.item')\")).scalar_one() == 'items.item'; assert c.execute(text(\"select version_num from public.alembic_version_items\")).scalar_one() == expected; c.close()"
             uv run python -c "from alembic import command; from app.modules.migrations import module_alembic_config; command.check(module_alembic_config('items'))"
           fi

@@ -1,0 +1,233 @@
+name: Release Supply Chain
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/release-supply-chain.yml'
+      - 'backend/**'
+      - 'editions/**'
+      - 'frontend/**'
+      - 'scripts/build-edition.mjs'
+      - 'scripts/generate-openapi.mjs'
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  packages: write
+
+concurrency:
+  group: release-supply-chain-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-scan-sign:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        edition: [base, items, suite]
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: app
+          POSTGRES_PASSWORD: test-postgres-password
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d app"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      ACCESS_TOKEN_EXPIRE_MINUTES: 11520
+      APP_EDITION: ${{ matrix.edition }}
+      APP_RUNTIME_DB_PASSWORD: test-runtime-password
+      APP_RUNTIME_DB_USER: app_runtime
+      BACKEND_CORS_ORIGINS: '["http://localhost:8080"]'
+      DOMAIN: localhost
+      EMAILS_FROM_EMAIL: info@example.com
+      ENVIRONMENT: local
+      FIRST_SUPERUSER: admin@example.com
+      FIRST_SUPERUSER_PASSWORD: test-superuser-password
+      FRONTEND_HOST: http://localhost:8080
+      POSTGRES_DB: app
+      POSTGRES_PASSWORD: test-postgres-password
+      POSTGRES_PORT: 5432
+      POSTGRES_SERVER: localhost
+      POSTGRES_USER: postgres
+      PROJECT_NAME: Fast Vben Admin
+      SECRET_KEY: test-secret-key-for-release-ci
+      SMTP_HOST: ''
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+
+      - uses: astral-sh/setup-uv@v5
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+          node-version: '22.18.0'
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: uv sync --locked
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Edition artifacts and images
+        run: pnpm build:edition -- --edition ${{ matrix.edition }} --images --release
+
+      - name: Migrate Edition database
+        working-directory: backend
+        run: |
+          uv run python -m app.platform.provision_db_roles
+          uv run python -m app.modules.migrate --edition ${{ matrix.edition }}
+          uv run python -m app.platform.provision_db_roles
+
+      - name: Smoke test built images
+        shell: bash
+        run: |
+          set -euo pipefail
+          backend_image="fast-vben-admin/backend:${{ matrix.edition }}"
+          frontend_image="fast-vben-admin/frontend:${{ matrix.edition }}"
+          backend_id=$(docker run --detach --network host \
+            --env ACCESS_TOKEN_EXPIRE_MINUTES \
+            --env APP_EDITION \
+            --env BACKEND_CORS_ORIGINS \
+            --env DOMAIN \
+            --env EMAILS_FROM_EMAIL \
+            --env ENVIRONMENT \
+            --env FIRST_SUPERUSER \
+            --env FIRST_SUPERUSER_PASSWORD \
+            --env FRONTEND_HOST \
+            --env POSTGRES_DB \
+            --env POSTGRES_PASSWORD="$APP_RUNTIME_DB_PASSWORD" \
+            --env POSTGRES_PORT \
+            --env POSTGRES_SERVER=127.0.0.1 \
+            --env POSTGRES_USER=app_runtime \
+            --env PROJECT_NAME \
+            --env SECRET_KEY \
+            --env SMTP_HOST \
+            "$backend_image")
+          frontend_id=$(docker run --detach --publish 8080:80 "$frontend_image")
+          cleanup() {
+            docker rm --force "$backend_id" "$frontend_id" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          backend_ready=false
+          frontend_ready=false
+          for _ in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:8000/api/v1/utils/health-check >/dev/null; then
+              backend_ready=true
+            fi
+            if curl --fail --silent http://127.0.0.1:8080/ >/dev/null; then
+              frontend_ready=true
+            fi
+            if [ "$backend_ready" = true ] && [ "$frontend_ready" = true ]; then
+              break
+            fi
+            sleep 2
+          done
+          if [ "$backend_ready" != true ] || [ "$frontend_ready" != true ]; then
+            docker logs "$backend_id" || true
+            docker logs "$frontend_id" || true
+            exit 1
+          fi
+
+      - uses: anchore/sbom-action/download-syft@v0
+
+      - name: Generate CycloneDX SBOMs
+        shell: bash
+        run: |
+          mkdir -p "artifacts/${{ matrix.edition }}/sbom"
+          syft "fast-vben-admin/backend:${{ matrix.edition }}" \
+            --output "cyclonedx-json=artifacts/${{ matrix.edition }}/sbom/backend.cdx.json"
+          syft "fast-vben-admin/frontend:${{ matrix.edition }}" \
+            --output "cyclonedx-json=artifacts/${{ matrix.edition }}/sbom/frontend.cdx.json"
+
+      - name: Scan backend image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          exit-code: '1'
+          ignore-unfixed: true
+          image-ref: fast-vben-admin/backend:${{ matrix.edition }}
+          severity: HIGH,CRITICAL
+
+      - name: Scan frontend image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          exit-code: '1'
+          ignore-unfixed: true
+          image-ref: fast-vben-admin/frontend:${{ matrix.edition }}
+          severity: HIGH,CRITICAL
+
+      - name: Upload Edition evidence
+        uses: actions/upload-artifact@v4
+        with:
+          if-no-files-found: error
+          name: edition-${{ matrix.edition }}-supply-chain
+          path: artifacts/${{ matrix.edition }}
+
+      - name: Define release image references
+        if: startsWith(github.ref, 'refs/tags/')
+        id: images
+        shell: bash
+        run: |
+          repository=$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
+          echo "backend=ghcr.io/${repository}/backend:${GITHUB_REF_NAME}-${{ matrix.edition }}" >> "$GITHUB_OUTPUT"
+          echo "frontend=ghcr.io/${repository}/frontend:${GITHUB_REF_NAME}-${{ matrix.edition }}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: docker/login-action@v3
+        with:
+          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+
+      - name: Push release images
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          docker tag "fast-vben-admin/backend:${{ matrix.edition }}" "${{ steps.images.outputs.backend }}"
+          docker tag "fast-vben-admin/frontend:${{ matrix.edition }}" "${{ steps.images.outputs.frontend }}"
+          docker push "${{ steps.images.outputs.backend }}"
+          docker push "${{ steps.images.outputs.frontend }}"
+
+      - name: Install Cosign
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: sigstore/cosign-installer@v3.8.2
+
+      - name: Sign images and attest SBOMs
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          cosign sign --yes "${{ steps.images.outputs.backend }}"
+          cosign sign --yes "${{ steps.images.outputs.frontend }}"
+          cosign attest --yes --type cyclonedx \
+            --predicate "artifacts/${{ matrix.edition }}/sbom/backend.cdx.json" \
+            "${{ steps.images.outputs.backend }}"
+          cosign attest --yes --type cyclonedx \
+            --predicate "artifacts/${{ matrix.edition }}/sbom/frontend.cdx.json" \
+            "${{ steps.images.outputs.frontend }}"

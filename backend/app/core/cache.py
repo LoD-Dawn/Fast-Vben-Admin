@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 class CacheNamespace:
     RBAC = "rbac"
+    MODULE_ACCESS = "module-access"
     PUBLIC_SETTINGS = "public-settings"
     DICTIONARY_ITEMS = "dictionary-items"
     LOGIN_RATE_LIMIT = "login-rate-limit"

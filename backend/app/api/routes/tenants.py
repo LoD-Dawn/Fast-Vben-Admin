@@ -16,17 +16,21 @@ from app.api.deps import (
 )
 from app.api.routes.login import create_login_token
 from app.core.cache import CacheNamespace, redis_cache
-from app.core.db import (
-    ensure_tenant_plan_profile,
-    ensure_tenant_profile,
+from app.core.clock import get_datetime_utc
+from app.core.quotas import get_file_usage, get_member_count
+from app.core.security import get_password_hash
+from app.core.tenancy import DEFAULT_TENANT_ID, get_active_tenant_membership
+from app.models import Token
+from app.modules.outbox import enqueue_event
+from app.modules.platform_events import TenantArchivedV1
+from app.platform.bootstrap import ensure_tenant_plan_profile, ensure_tenant_profile
+from app.platform.bootstrap_rbac import (
     provision_tenant_roles,
     sync_tenant_plan_role_menus,
 )
-from app.core.quotas import get_file_usage, get_member_count
-from app.core.security import get_password_hash
-from app.core.tenancy import DEFAULT_TENANT_ID
-from app.models import (
-    Menu,
+from app.platform.core.authorization_models import Menu
+from app.platform.core.identity_models import User, UserSession
+from app.platform.core.tenancy_models import (
     Tenant,
     TenantCreate,
     TenantInitializationTemplate,
@@ -54,12 +58,8 @@ from app.models import (
     TenantSwitchRequest,
     TenantUpdate,
     TenantUsagePublic,
-    Token,
-    User,
-    UserSession,
-    get_datetime_utc,
 )
-from app.modules.outbox import enqueue_event
+from app.platform.tenant_uow import activate_platform_tenant_scope
 
 router = APIRouter(prefix="/tenants", tags=["tenants"])
 logger = logging.getLogger(__name__)
@@ -414,6 +414,7 @@ def set_default_template(
 
 
 def revoke_tenant_sessions(*, session: SessionDep, tenant_id: uuid.UUID) -> None:
+    activate_platform_tenant_scope(session, tenant_id, privileged=True)
     revoked_at = get_datetime_utc()
     sessions = session.exec(
         select(UserSession).where(
@@ -518,12 +519,15 @@ def switch_tenant(
     token_data: CurrentTokenPayload,
     body: TenantSwitchRequest,
 ) -> Token:
-    token = create_login_token(
-        session=session,
-        request=request,
-        user=current_user,
-        tenant_id=body.tenant_id,
-    )
+    if (
+        get_active_tenant_membership(
+            session=session,
+            user_id=current_user.id,
+            tenant_id=body.tenant_id,
+        )
+        is None
+    ):
+        raise HTTPException(status_code=403, detail="User has no active tenant")
     if token_data.jti:
         old_session = session.exec(
             select(UserSession).where(
@@ -534,7 +538,16 @@ def switch_tenant(
         if old_session is not None:
             old_session.revoked_at = get_datetime_utc()
             session.add(old_session)
+            # The old token belongs to the authenticated tenant. Commit it
+            # before entering the requested tenant's scoped token issuance.
             session.commit()
+    token = create_login_token(
+        session=session,
+        request=request,
+        user=current_user,
+        tenant_id=body.tenant_id,
+        allow_tenant_switch=True,
+    )
     return token
 
 
@@ -1217,7 +1230,10 @@ def operate_tenant_lifecycle(
             event_type="platform.tenant.archived",
             tenant_id=tenant.id,
             aggregate_id=str(tenant.id),
-            payload={"tenant_id": str(tenant.id), "tenant_code": tenant.code},
+            payload=TenantArchivedV1(
+                tenant_id=tenant.id, tenant_code=tenant.code
+            ).model_dump(mode="json"),
+            allow_zero_subscribers=True,
         )
     session.commit()
     session.refresh(tenant)
@@ -1341,7 +1357,10 @@ def archive_tenant(*, session: SessionDep, tenant_id: uuid.UUID) -> Response:
         event_type="platform.tenant.archived",
         tenant_id=tenant.id,
         aggregate_id=str(tenant.id),
-        payload={"tenant_id": str(tenant.id), "tenant_code": tenant.code},
+        payload=TenantArchivedV1(
+            tenant_id=tenant.id, tenant_code=tenant.code
+        ).model_dump(mode="json"),
+        allow_zero_subscribers=True,
     )
     session.commit()
     return Response(status_code=204)

@@ -6,13 +6,13 @@ from urllib.parse import parse_qs, urlparse
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
+from app.core.clock import get_datetime_utc
 from app.core.config import settings
 from app.models import (
     OAuth2AccessToken,
     OAuth2AuthorizationCode,
     OAuth2Client,
     User,
-    get_datetime_utc,
 )
 
 

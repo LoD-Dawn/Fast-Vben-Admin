@@ -3,7 +3,7 @@ from collections.abc import Collection
 
 from sqlmodel import Session, select
 
-from app.models import User
+from app.platform.core.identity_models import User
 from app.platform.public_api.users import UserSummary
 
 

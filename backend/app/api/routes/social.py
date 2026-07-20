@@ -11,9 +11,10 @@ from app.api.deps import (
     normalize_pagination,
     require_permission,
 )
+from app.core.clock import get_datetime_utc
 from app.core.mfa import encrypt_secret
 from app.core.security import verify_password
-from app.models import (
+from app.platform.core.identity_models import (
     SocialClient,
     SocialClientCreate,
     SocialClientPublic,
@@ -23,10 +24,9 @@ from app.models import (
     SocialUserBind,
     SocialUserPublic,
     SocialUsersPublic,
-    TenantMembership,
     User,
-    get_datetime_utc,
 )
+from app.platform.core.tenancy_models import TenantMembership
 
 router = APIRouter(prefix="/social", tags=["social"])
 

@@ -57,6 +57,7 @@ def test_manage_sms_and_send_with_debug_channel(
 
     callback_response = client.post(
         f"{settings.API_V1_STR}/sms/callbacks/{channel['code']}",
+        params={"tenant_code": "default"},
         json={
             "request_id": sms_log["api_request_id"],
             "status": "success",

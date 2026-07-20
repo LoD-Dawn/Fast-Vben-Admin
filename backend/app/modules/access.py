@@ -1,23 +1,27 @@
 from dataclasses import dataclass
 from datetime import datetime
+from functools import lru_cache
+from typing import Any
 
+from sqlalchemy import and_, or_
 from sqlmodel import Session, col, select
 
+from app.core.cache import CacheNamespace, redis_cache
+from app.core.clock import get_datetime_utc
 from app.core.config import settings
-from app.models import (
+from app.platform.core.identity_models import User
+from app.platform.core.runtime_models import (
     ModuleDesiredState,
     ModuleEntitlementEffect,
     ModuleObservedState,
     ModuleRegistry,
     ModuleStateAudit,
-    Tenant,
     TenantModule,
     TenantModuleEntitlementOverride,
-    TenantPlan,
     TenantPlanModule,
-    User,
-    get_datetime_utc,
 )
+from app.platform.core.tenancy_models import Tenant, TenantPlan
+from app.platform.tenant_uow import PlatformTenantUnitOfWork
 
 
 @dataclass(frozen=True)
@@ -26,7 +30,20 @@ class ModuleAccessDecision:
     error_code: str | None = None
 
 
-def _current_manifest():
+@dataclass(frozen=True)
+class ModuleAccessSnapshot:
+    desired_state: ModuleDesiredState
+    observed_state: ModuleObservedState
+    tenant_is_active: bool | None
+    plan_is_active: bool | None
+    plan_module_enabled: bool | None
+    override_effect: ModuleEntitlementEffect | None
+    preference_enabled: bool | None
+
+
+@lru_cache(maxsize=1)
+def get_runtime_manifest() -> Any:
+    """Load the immutable process manifest once; requests never read Edition YAML."""
     from app.modules.manifest import build_manifest, load_manifest_file
 
     if settings.BUILD_MANIFEST_PATH is not None:
@@ -34,11 +51,19 @@ def _current_manifest():
     return build_manifest(edition=settings.APP_EDITION)
 
 
-def ensure_module_runtime(session: Session, *, manifest=None) -> None:
-    """Seed missing runtime records without overwriting an operator decision."""
-    manifest = manifest or _current_manifest()
+def clear_runtime_manifest_cache() -> None:
+    """Allow controlled test or process lifecycle code to reload the build manifest."""
+    get_runtime_manifest.cache_clear()
+
+
+def reconcile_module_runtime(session: Session, *, manifest=None) -> None:
+    """Synchronize build-owned runtime records during migration or explicit reconciliation.
+
+    This is deliberately a write path. Request authorization must only read the
+    state produced here and must never create registry or entitlement records.
+    """
+    manifest = manifest or get_runtime_manifest()
     now = get_datetime_utc()
-    module_codes = {module.code for module in manifest.modules}
 
     for module in manifest.modules:
         registry = session.get(ModuleRegistry, module.code)
@@ -61,35 +86,21 @@ def ensure_module_runtime(session: Session, *, manifest=None) -> None:
                 reason="module bundled in current build manifest",
                 actor=None,
             )
-        else:
+        elif (
+            registry.version != module.version
+            or registry.manifest_digest != manifest.manifest_digest
+        ):
             registry.version = module.version
             registry.manifest_digest = manifest.manifest_digest
             registry.updated_at = now
             session.add(registry)
 
-    # New module editions are entitled for existing plans by default. A later
-    # explicit plan mapping or tenant override always takes precedence.
-    business_codes = module_codes - {"platform"}
-    if business_codes:
-        plans = session.exec(select(TenantPlan)).all()
-        for plan in plans:
-            for module_code in business_codes:
-                mapping = session.get(TenantPlanModule, (plan.id, module_code))
-                if mapping is None:
-                    session.add(
-                        TenantPlanModule(
-                            plan_id=plan.id,
-                            module_code=module_code,
-                            is_enabled=True,
-                            updated_at=now,
-                        )
-                    )
     session.flush()
 
 
 def validate_module_runtime(session: Session, *, manifest=None) -> None:
     """Fail closed when persisted runtime state disagrees with the build."""
-    manifest = manifest or _current_manifest()
+    manifest = manifest or get_runtime_manifest()
     manifest_codes = {module.code for module in manifest.modules}
     registries = {
         registry.code: registry for registry in session.exec(select(ModuleRegistry)).all()
@@ -183,6 +194,18 @@ def _active_override(
 def tenant_has_module_entitlement(
     *, session: Session, tenant: Tenant, module_code: str, now: datetime | None = None
 ) -> bool:
+    with PlatformTenantUnitOfWork(session, tenant.id, privileged=True):
+        return _tenant_has_module_entitlement(
+            session=session,
+            tenant=tenant,
+            module_code=module_code,
+            now=now,
+        )
+
+
+def _tenant_has_module_entitlement(
+    *, session: Session, tenant: Tenant, module_code: str, now: datetime | None = None
+) -> bool:
     now = now or get_datetime_utc()
     plan = session.get(TenantPlan, tenant.plan_id)
     if plan is None or not plan.is_active:
@@ -199,39 +222,177 @@ def tenant_has_module_entitlement(
     return bool(mapping and mapping.is_enabled)
 
 
+def _load_module_access_snapshot(
+    *, session: Session, tenant_id, module_code: str
+) -> ModuleAccessSnapshot | None:
+    """Read all business-module access inputs in one SQL statement."""
+    now = get_datetime_utc()
+    active_override_id = (
+        select(TenantModuleEntitlementOverride.id)
+        .where(
+            TenantModuleEntitlementOverride.tenant_id == tenant_id,
+            TenantModuleEntitlementOverride.module_code == module_code,
+            or_(
+                TenantModuleEntitlementOverride.starts_at.is_(None),
+                TenantModuleEntitlementOverride.starts_at <= now,
+            ),
+            or_(
+                TenantModuleEntitlementOverride.ends_at.is_(None),
+                TenantModuleEntitlementOverride.ends_at > now,
+            ),
+        )
+        .order_by(col(TenantModuleEntitlementOverride.created_at).desc())
+        .limit(1)
+        .scalar_subquery()
+    )
+    statement = (
+        select(
+            ModuleRegistry.desired_state,
+            ModuleRegistry.observed_state,
+            Tenant.is_active,
+            TenantPlan.is_active,
+            TenantPlanModule.is_enabled,
+            TenantModuleEntitlementOverride.effect,
+            TenantModule.is_enabled,
+        )
+        .select_from(ModuleRegistry)
+        .outerjoin(Tenant, Tenant.id == tenant_id)
+        .outerjoin(TenantPlan, TenantPlan.id == Tenant.plan_id)
+        .outerjoin(
+            TenantPlanModule,
+            and_(
+                TenantPlanModule.plan_id == Tenant.plan_id,
+                TenantPlanModule.module_code == module_code,
+            ),
+        )
+        .outerjoin(
+            TenantModule,
+            and_(
+                TenantModule.tenant_id == tenant_id,
+                TenantModule.module_code == module_code,
+            ),
+        )
+        .outerjoin(
+            TenantModuleEntitlementOverride,
+            TenantModuleEntitlementOverride.id == active_override_id,
+        )
+        .where(ModuleRegistry.code == module_code)
+    )
+    row = session.exec(statement).one_or_none()
+    if row is None:
+        return None
+    return ModuleAccessSnapshot(*row)
+
+
+def _cached_module_access_decision(
+    *, manifest_digest: str, tenant_id, module_code: str
+) -> ModuleAccessDecision | None:
+    key = redis_cache.build_versioned_key(
+        CacheNamespace.MODULE_ACCESS,
+        "module-access",
+        manifest_digest,
+        tenant_id,
+        module_code,
+    )
+    cached = redis_cache.get_json(key)
+    if not isinstance(cached, dict) or not isinstance(cached.get("allowed"), bool):
+        return None
+    error_code = cached.get("error_code")
+    return ModuleAccessDecision(
+        allowed=cached["allowed"],
+        error_code=error_code if isinstance(error_code, str) else None,
+    )
+
+
+def _cache_module_access_decision(
+    *,
+    manifest_digest: str,
+    tenant_id,
+    module_code: str,
+    decision: ModuleAccessDecision,
+) -> None:
+    key = redis_cache.build_versioned_key(
+        CacheNamespace.MODULE_ACCESS,
+        "module-access",
+        manifest_digest,
+        tenant_id,
+        module_code,
+    )
+    redis_cache.set_json(
+        key,
+        {"allowed": decision.allowed, "error_code": decision.error_code},
+    )
+
+
+def _evaluate_module_access_snapshot(
+    snapshot: ModuleAccessSnapshot | None,
+) -> ModuleAccessDecision:
+    if snapshot is None:
+        return ModuleAccessDecision(False, "MODULE_UNAVAILABLE")
+    if snapshot.desired_state != ModuleDesiredState.ENABLED:
+        return ModuleAccessDecision(False, "MODULE_UNAVAILABLE")
+    if snapshot.observed_state != ModuleObservedState.READY:
+        return ModuleAccessDecision(False, "MODULE_UNAVAILABLE")
+    if not snapshot.tenant_is_active or not snapshot.plan_is_active:
+        return ModuleAccessDecision(False, "TENANT_MODULE_ENTITLEMENT_REQUIRED")
+
+    entitled = (
+        snapshot.override_effect == ModuleEntitlementEffect.GRANT
+        if snapshot.override_effect is not None
+        else bool(snapshot.plan_module_enabled)
+    )
+    if not entitled:
+        return ModuleAccessDecision(False, "TENANT_MODULE_ENTITLEMENT_REQUIRED")
+    if snapshot.preference_enabled is False:
+        return ModuleAccessDecision(False, "TENANT_MODULE_DISABLED")
+    return ModuleAccessDecision(True)
+
+
 def evaluate_module_access(
     *, session: Session, tenant_id, module_code: str
 ) -> ModuleAccessDecision:
-    manifest = _current_manifest()
+    manifest = get_runtime_manifest()
     if module_code not in {module.code for module in manifest.modules}:
         return ModuleAccessDecision(False, "MODULE_NOT_INSTALLED")
 
-    ensure_module_runtime(session)
-    registry = session.get(ModuleRegistry, module_code)
-    if registry is None:
-        return ModuleAccessDecision(False, "MODULE_UNAVAILABLE")
-    if registry.desired_state != ModuleDesiredState.ENABLED:
-        return ModuleAccessDecision(False, "MODULE_UNAVAILABLE")
-    if registry.observed_state != ModuleObservedState.READY:
-        return ModuleAccessDecision(False, "MODULE_UNAVAILABLE")
-
     if module_code == "platform":
-        return ModuleAccessDecision(True)
+        registry = session.exec(
+            select(ModuleRegistry.desired_state, ModuleRegistry.observed_state).where(
+                ModuleRegistry.code == module_code
+            )
+        ).one_or_none()
+        if registry is None:
+            return ModuleAccessDecision(False, "MODULE_UNAVAILABLE")
+        desired_state, observed_state = registry
+        return (
+            ModuleAccessDecision(True)
+            if desired_state == ModuleDesiredState.ENABLED
+            and observed_state == ModuleObservedState.READY
+            else ModuleAccessDecision(False, "MODULE_UNAVAILABLE")
+        )
 
-    tenant = session.get(Tenant, tenant_id)
-    if tenant is None or not tenant.is_active:
-        return ModuleAccessDecision(False, "TENANT_MODULE_ENTITLEMENT_REQUIRED")
-    if not tenant_has_module_entitlement(
-        session=session,
-        tenant=tenant,
+    cached = _cached_module_access_decision(
+        manifest_digest=manifest.manifest_digest,
+        tenant_id=tenant_id,
         module_code=module_code,
-    ):
-        return ModuleAccessDecision(False, "TENANT_MODULE_ENTITLEMENT_REQUIRED")
+    )
+    if cached is not None:
+        return cached
 
-    preference = session.get(TenantModule, (tenant_id, module_code))
-    if preference is not None and not preference.is_enabled:
-        return ModuleAccessDecision(False, "TENANT_MODULE_DISABLED")
-    return ModuleAccessDecision(True)
+    decision = _evaluate_module_access_snapshot(
+        _load_module_access_snapshot(
+            session=session,
+            tenant_id=tenant_id,
+            module_code=module_code,
+        )
+    )
+    _cache_module_access_decision(
+        manifest_digest=manifest.manifest_digest,
+        tenant_id=tenant_id,
+        module_code=module_code,
+        decision=decision,
+    )
+    return decision
 
 
 def filter_module_scoped_permissions(

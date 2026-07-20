@@ -11,8 +11,8 @@ from app.api.deps import (
     normalize_pagination,
     require_permission,
 )
-from app.mail import get_template_params, render_template
-from app.models import (
+from app.core.clock import get_datetime_utc
+from app.platform.core.configuration_models import (
     SiteMessagePublic,
     SiteMessageSendRequest,
     SiteMessagesPublic,
@@ -21,11 +21,11 @@ from app.models import (
     SiteMessageTemplatePublic,
     SiteMessageTemplatesPublic,
     SiteMessageTemplateUpdate,
-    TenantMembership,
-    User,
     UserMessage,
-    get_datetime_utc,
 )
+from app.platform.core.identity_models import User
+from app.platform.core.tenancy_models import TenantMembership
+from app.platform.infra.mail import get_template_params, render_template
 
 router = APIRouter(prefix="/site-messages", tags=["site-messages"])
 

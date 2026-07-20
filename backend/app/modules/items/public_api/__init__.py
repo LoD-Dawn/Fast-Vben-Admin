@@ -6,5 +6,6 @@ from app.modules.items.public_api.dto import (
     ItemsPublic,
     ItemUpdate,
 )
+from app.modules.items.public_api.events import ItemChangedV1
 
-__all__ = ["ItemCreate", "ItemPublic", "ItemsPublic", "ItemUpdate"]
+__all__ = ["ItemChangedV1", "ItemCreate", "ItemPublic", "ItemsPublic", "ItemUpdate"]

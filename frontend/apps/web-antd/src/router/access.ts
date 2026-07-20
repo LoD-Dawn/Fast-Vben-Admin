@@ -11,7 +11,7 @@ import { message } from 'ant-design-vue';
 import { getAllMenusApi, getBuildManifestApi } from '#/api';
 import { BasicLayout, IFrameView } from '#/layouts';
 import { $t } from '#/locales';
-import { buildManifest } from '#/modules/build-manifest';
+import { assertManifestCompatibility } from '#/modules/manifest-compatibility';
 
 import { modulePageMap } from './generated-module-pages';
 
@@ -32,12 +32,14 @@ async function generateAccess(options: GenerateMenuAndRoutesOptions) {
     ...options,
     fetchMenuListAsync: async () => {
       const backendManifest = await getBuildManifestApi();
-      if (backendManifest.manifest_digest !== buildManifest.manifest_digest) {
+      try {
+        assertManifestCompatibility(backendManifest);
+      } catch (error) {
         message.error({
           content: 'Application version does not match the server.',
           duration: 0,
         });
-        return [];
+        throw error;
       }
       message.loading({
         content: `${$t('common.loadingMenu')}...`,

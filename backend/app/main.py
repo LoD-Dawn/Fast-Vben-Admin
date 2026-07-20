@@ -9,11 +9,13 @@ from sqlmodel import Session
 from starlette.middleware.cors import CORSMiddleware
 
 from app.api.main import api_router
-from app.audit import audit_operation_middleware
 from app.core.config import settings
-from app.core.db import engine
+from app.core.database import engine
 from app.core.metrics import build_metrics_response, metrics_middleware
-from app.modules.access import validate_module_runtime
+from app.modules.access import get_runtime_manifest, validate_module_runtime
+from app.modules.events import configure_event_deliveries
+from app.modules.registry import get_module_definitions
+from app.platform.infra.audit import audit_operation_middleware
 
 
 def custom_generate_unique_id(route: APIRoute) -> str:
@@ -90,6 +92,8 @@ ERROR_CODE_BY_MESSAGE = {
     "Module is unavailable": "MODULE_UNAVAILABLE",
     "Tenant module entitlement is required": "TENANT_MODULE_ENTITLEMENT_REQUIRED",
     "Tenant module is disabled": "TENANT_MODULE_DISABLED",
+    "Platform module cannot be disabled": "PLATFORM_MODULE_REQUIRED",
+    "Platform module entitlement cannot be managed": "PLATFORM_MODULE_REQUIRED",
 }
 
 
@@ -112,6 +116,9 @@ if settings.SENTRY_DSN and settings.ENVIRONMENT != "local":
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    manifest = get_runtime_manifest()
+    definitions = get_module_definitions()
+    configure_event_deliveries(definitions[module.code] for module in manifest.modules)
     with Session(engine) as session:
         validate_module_runtime(session)
     yield

@@ -12,12 +12,12 @@ from app.api.deps import (
     require_permission,
 )
 from app.core.cache import CacheNamespace, redis_cache
-from app.models import (
+from app.core.clock import get_datetime_utc
+from app.platform.core.configuration_models import (
     SystemSetting,
     SystemSettingPublic,
     SystemSettingsPublic,
     SystemSettingUpdate,
-    get_datetime_utc,
 )
 
 router = APIRouter(prefix="/settings", tags=["settings"])

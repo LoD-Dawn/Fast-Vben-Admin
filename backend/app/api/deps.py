@@ -10,25 +10,20 @@ from pydantic import ValidationError
 from sqlmodel import Session, select
 
 from app.core import security
+from app.core.clock import get_datetime_utc
 from app.core.config import settings
-from app.core.db import engine
+from app.core.database import engine
 from app.core.tenancy import (
     DEFAULT_TENANT_ID,
     TenantContext,
     get_active_tenant_membership,
     get_default_tenant,
 )
-from app.models import (
-    Menu,
-    Role,
-    RoleMenu,
-    TokenPayload,
-    User,
-    UserRole,
-    UserSession,
-    get_datetime_utc,
-)
+from app.models import TokenPayload
 from app.modules.access import evaluate_module_access
+from app.platform.core.authorization_models import Menu, Role, RoleMenu, UserRole
+from app.platform.core.identity_models import User, UserSession
+from app.platform.tenant_uow import activate_platform_tenant_scope
 
 reusable_oauth2 = OAuth2PasswordBearer(
     tokenUrl=f"{settings.API_V1_STR}/login/access-token"
@@ -70,11 +65,12 @@ def get_current_user(session: SessionDep, token_data: CurrentTokenPayload) -> Us
 
 
 def get_user_from_token_payload(*, session: Session, token_data: TokenPayload) -> User:
-    if not token_data.sub or not token_data.jti:
+    if not token_data.sub or not token_data.jti or token_data.tenant_id is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Could not validate credentials",
         )
+    activate_platform_tenant_scope(session, token_data.tenant_id)
     user = session.get(User, token_data.sub)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -95,7 +91,7 @@ def get_user_from_token_payload(*, session: Session, token_data: TokenPayload) -
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Could not validate credentials",
         )
-    if token_data.tenant_id and token_data.tenant_id != user_session.tenant_id:
+    if token_data.tenant_id != user_session.tenant_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Tenant context is invalid",
@@ -126,7 +122,7 @@ def get_current_tenant_context(
     ).first()
     if user_session is None:
         raise HTTPException(status_code=403, detail="Tenant context is invalid")
-    tenant_id = token_data.tenant_id or user_session.tenant_id
+    tenant_id = token_data.tenant_id
     if tenant_id != user_session.tenant_id:
         raise HTTPException(status_code=403, detail="Tenant context is invalid")
     membership = get_active_tenant_membership(
@@ -137,6 +133,7 @@ def get_current_tenant_context(
     if membership is None:
         raise HTTPException(status_code=403, detail="Tenant context is invalid")
     _, tenant = membership
+    activate_platform_tenant_scope(session, tenant.id)
     return TenantContext(
         tenant_id=tenant.id,
         tenant_code=tenant.code,
@@ -150,7 +147,9 @@ CurrentTenant = Annotated[TenantContext, Depends(get_current_tenant_context)]
 def get_public_tenant_id(session: SessionDep, token: OptionalTokenDep) -> uuid.UUID:
     if token is None:
         tenant = get_default_tenant(session)
-        return tenant.id if tenant is not None else DEFAULT_TENANT_ID
+        tenant_id = tenant.id if tenant is not None else DEFAULT_TENANT_ID
+        activate_platform_tenant_scope(session, tenant_id)
+        return tenant_id
     try:
         token_data = TokenPayload(
             **jwt.decode(token, settings.SECRET_KEY, algorithms=[security.ALGORITHM])
@@ -177,8 +176,6 @@ PublicTenantId = Annotated[uuid.UUID, Depends(get_public_tenant_id)]
 def get_optional_tenant_id(
     session: SessionDep, token: OptionalTokenDep
 ) -> uuid.UUID | None:
-    if token is None:
-        return None
     return get_public_tenant_id(session=session, token=token)
 
 

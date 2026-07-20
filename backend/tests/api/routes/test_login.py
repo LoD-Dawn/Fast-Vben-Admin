@@ -1,3 +1,4 @@
+import uuid
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
@@ -14,7 +15,11 @@ from app.core.cache import redis_cache
 from app.core.config import settings
 from app.core.mfa import encrypt_totp_secret, serialize_recovery_codes
 from app.core.security import get_password_hash, verify_password
-from app.core.tenancy import DEFAULT_TENANT_CODE, add_user_to_default_tenant
+from app.core.tenancy import (
+    DEFAULT_TENANT_CODE,
+    DEFAULT_TENANT_ID,
+    add_user_to_default_tenant,
+)
 from app.crud import create_user
 from app.models import (
     EnterpriseOidcIdentity,
@@ -27,6 +32,7 @@ from app.models import (
     UserRole,
     UserSession,
 )
+from app.platform.tenant_uow import PlatformTenantUnitOfWork
 from app.utils import generate_password_reset_token
 from tests.utils.user import user_authentication_headers
 from tests.utils.utils import random_email, random_lower_string
@@ -329,20 +335,18 @@ def test_public_tenant_registration_creates_owner_and_token(
     mobile = "13512345678"
     tenant_code = f"test-{random_lower_string()[:8]}"
     email = random_email()
-    setting = db.exec(
-        select(SystemSetting).where(
-            SystemSetting.key == "auth.allow_register",
-            SystemSetting.tenant_id
-            == login_route.get_login_tenant(
-                session=db,
-                tenant_code=DEFAULT_TENANT_CODE,
-            ).id,
-        )
-    ).one()
-    original_setting_value = setting.value
-    setting.value = "true"
-    db.add(setting)
-    db.commit()
+    with PlatformTenantUnitOfWork(db, DEFAULT_TENANT_ID, privileged=True):
+        setting = db.exec(
+            select(SystemSetting).where(
+                SystemSetting.key == "auth.allow_register",
+                SystemSetting.tenant_id == DEFAULT_TENANT_ID,
+            )
+        ).one()
+        setting_id = setting.id
+        original_setting_value = setting.value
+        setting.value = "true"
+        db.add(setting)
+        db.commit()
 
     def fake_set(
         key: str,
@@ -417,16 +421,20 @@ def test_public_tenant_registration_creates_owner_and_token(
         assert token["tenant_id"] == str(tenant.id)
     finally:
         if tenant is not None:
-            db.exec(delete(UserSession).where(UserSession.tenant_id == tenant.id))
-            db.commit()
+            with PlatformTenantUnitOfWork(db, tenant.id, privileged=True):
+                db.exec(delete(UserSession).where(UserSession.tenant_id == tenant.id))
+                db.commit()
             db.delete(tenant)
             db.commit()
         if owner is not None:
             db.delete(owner)
             db.commit()
-        setting.value = original_setting_value
-        db.add(setting)
-        db.commit()
+        with PlatformTenantUnitOfWork(db, DEFAULT_TENANT_ID, privileged=True):
+            setting = db.get(SystemSetting, setting_id)
+            assert setting is not None
+            setting.value = original_setting_value
+            db.add(setting)
+            db.commit()
 
 
 def test_login_token_and_session_share_tenant(
@@ -450,9 +458,12 @@ def test_login_token_and_session_share_tenant(
         settings.SECRET_KEY,
         algorithms=[security.ALGORITHM],
     )
-    user_session = db.exec(
-        select(UserSession).where(UserSession.token_jti == payload["jti"])
-    ).one()
+    with PlatformTenantUnitOfWork(
+        db, uuid.UUID(payload["tenant_id"]), privileged=True
+    ):
+        user_session = db.exec(
+            select(UserSession).where(UserSession.token_jti == payload["jti"])
+        ).one()
     assert payload["tenant_id"] == token["tenant_id"]
     assert str(user_session.tenant_id) == token["tenant_id"]
 
@@ -567,11 +578,12 @@ def test_enterprise_oidc_maps_local_user_role_and_active_status(
         assert repeated_exchange.status_code == 400
         assert repeated_exchange.json()["code"] == "AUTH_ENTERPRISE_OIDC_TICKET_INVALID"
 
-        assigned_roles = db.exec(
-            select(Role.code)
-            .join(UserRole, UserRole.role_id == Role.id)
-            .where(UserRole.user_id == first_user.id)
-        ).all()
+        with PlatformTenantUnitOfWork(db, DEFAULT_TENANT_ID, privileged=True):
+            assigned_roles = db.exec(
+                select(Role.code)
+                .join(UserRole, UserRole.role_id == Role.id)
+                .where(UserRole.user_id == first_user.id)
+            ).all()
         assert assigned_roles == ["admin"]
         assert db.exec(
             select(EnterpriseOidcIdentity).where(

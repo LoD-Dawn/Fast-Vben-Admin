@@ -5,8 +5,8 @@ from sqlmodel import select
 
 from app.api.deps import CurrentTenant, CurrentUser, SessionDep
 from app.core.cache import CacheNamespace, redis_cache
-from app.models import Menu, Role, RoleMenu, UserRole
 from app.modules.access import filter_module_scoped_permissions
+from app.platform.core.authorization_models import Menu, Role, RoleMenu, UserRole
 
 router = APIRouter(prefix="/permissions", tags=["permissions"])
 

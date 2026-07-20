@@ -11,20 +11,22 @@ from app.api.deps import (
     normalize_pagination,
     require_permission,
 )
+from app.core.clock import get_datetime_utc
 from app.models import (
     Message,
+)
+from app.platform.core.configuration_models import (
     Notice,
     NoticeCreate,
     NoticePublic,
     NoticesPublic,
     NoticeUpdate,
-    TenantMembership,
-    User,
     UserMessage,
     UserMessagePublic,
     UserMessagesPublic,
-    get_datetime_utc,
 )
+from app.platform.core.identity_models import User
+from app.platform.core.tenancy_models import TenantMembership
 
 router = APIRouter(tags=["notices"])
 

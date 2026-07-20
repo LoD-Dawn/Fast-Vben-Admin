@@ -3,7 +3,8 @@ import uuid
 from fastapi import HTTPException
 from sqlmodel import Session, func, select
 
-from app.models import FileAsset, Tenant, TenantMembership, TenantPlan
+from app.models import FileAsset
+from app.platform.core.tenancy_models import Tenant, TenantMembership, TenantPlan
 
 
 def get_tenant_plan(*, session: Session, tenant_id: uuid.UUID) -> TenantPlan:

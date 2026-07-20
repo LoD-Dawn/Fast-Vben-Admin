@@ -2,10 +2,7 @@ from app.api.routes import (
     dashboard,
     departments,
     dictionaries,
-    files,
     login,
-    logs,
-    mail,
     menus,
     modules,
     notices,
@@ -14,7 +11,6 @@ from app.api.routes import (
     posts,
     roles,
     site_messages,
-    sms,
     social,
     tenants,
     users,
@@ -22,6 +18,7 @@ from app.api.routes import (
 )
 from app.api.routes import settings as system_settings
 from app.modules.contracts import EventContract, MigrationSpec, ModuleDefinition
+from app.platform.infra import files_router, logs_router, mail_router, sms_router
 
 definition = ModuleDefinition(
     code="platform",
@@ -32,7 +29,7 @@ definition = ModuleDefinition(
         dashboard.router,
         users.router,
         utils.router,
-        logs.router,
+        logs_router.router,
         roles.router,
         menus.router,
         notices.router,
@@ -41,9 +38,9 @@ definition = ModuleDefinition(
         departments.router,
         dictionaries.router,
         system_settings.router,
-        files.router,
-        sms.router,
-        mail.router,
+        files_router.router,
+        sms_router.router,
+        mail_router.router,
         site_messages.router,
         oauth2.router,
         social.router,
@@ -54,7 +51,12 @@ definition = ModuleDefinition(
     permission_prefix="platform",
     migration=MigrationSpec(namespace="platform", schema="public"),
     event_publishers=(
-        EventContract("platform.master_data.lifecycle", 1),
+        EventContract("platform.module.observed_state.changed", 1, True),
+        EventContract("platform.department.archived", 1, True),
+        EventContract("platform.post.archived", 1, True),
+        EventContract("platform.tenant.archived", 1, True),
+        EventContract("platform.user.archived", 1, True),
+        EventContract("platform.user.anonymized", 1, True),
     ),
     workers=("outbox-dispatch",),
 )

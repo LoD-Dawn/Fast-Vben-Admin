@@ -18,6 +18,7 @@ from app.api.deps import (
     user_has_permission,
 )
 from app.core.cache import CacheNamespace, redis_cache
+from app.core.clock import get_datetime_utc
 from app.core.config import settings
 from app.core.data_permissions import build_owner_data_scope_filter
 from app.core.mfa import (
@@ -32,15 +33,22 @@ from app.core.mfa import (
 )
 from app.core.quotas import ensure_member_quota
 from app.core.security import get_password_hash, verify_password
-from app.models import (
+from app.models import Message
+from app.modules.outbox import enqueue_event
+from app.modules.platform_events import UserAnonymizedV1, UserArchivedV1
+from app.platform.core.authorization_models import (
     Department,
-    MasterDataAnonymizeRequest,
-    Message,
     Post,
     PostPublic,
     Role,
     RolePublic,
-    TenantMembership,
+    UserPost,
+    UserPostUpdate,
+    UserRole,
+    UserRoleUpdate,
+)
+from app.platform.core.identity_models import (
+    MasterDataAnonymizeRequest,
     UpdatePassword,
     User,
     UserCreate,
@@ -49,18 +57,13 @@ from app.models import (
     UserMfaEnableResult,
     UserMfaSetup,
     UserMfaStatus,
-    UserPost,
-    UserPostUpdate,
     UserPublic,
-    UserRole,
-    UserRoleUpdate,
     UserSession,
     UsersPublic,
     UserUpdate,
     UserUpdateMe,
-    get_datetime_utc,
 )
-from app.modules.outbox import enqueue_event
+from app.platform.core.tenancy_models import TenantMembership
 from app.utils import generate_new_account_email, send_email
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -1193,11 +1196,12 @@ def delete_user(
         event_type="platform.user.archived",
         tenant_id=tenant_context.tenant_id,
         aggregate_id=str(user.id),
-        payload={
-            "user_id": str(user.id),
-            "tenant_id": str(tenant_context.tenant_id),
-            "full_name": user.full_name,
-        },
+        payload=UserArchivedV1(
+            user_id=user.id,
+            tenant_id=tenant_context.tenant_id,
+            full_name=user.full_name,
+        ).model_dump(mode="json"),
+        allow_zero_subscribers=True,
     )
     session.commit()
     return None
@@ -1242,11 +1246,12 @@ def anonymize_user(
         event_type="platform.user.anonymized",
         tenant_id=tenant_context.tenant_id,
         aggregate_id=str(user.id),
-        payload={
-            "user_id": str(user.id),
-            "tenant_id": str(tenant_context.tenant_id),
-            "reason": body.reason,
-        },
+        payload=UserAnonymizedV1(
+            user_id=user.id,
+            tenant_id=tenant_context.tenant_id,
+            reason=body.reason,
+        ).model_dump(mode="json"),
+        allow_zero_subscribers=True,
     )
     session.commit()
     session.refresh(user)

@@ -9,12 +9,14 @@ from sqlmodel import Session, select
 from app.core.config import settings
 from app.core.tenancy import DEFAULT_TENANT_ID
 from app.models import FileAsset, FileStorageChannel, SystemSetting, User
+from app.platform.tenant_uow import activate_platform_tenant_scope
 from app.storage import delete_stored_file
 
 
 @pytest.fixture(autouse=True)
 def reset_file_storage_state(db: Session) -> Generator[None]:
     db.rollback()
+    activate_platform_tenant_scope(db, DEFAULT_TENANT_ID, privileged=True)
     upload_setting_defaults = {
         "upload.max_size_mb": ("10", "number"),
         "upload.allowed_extensions": (settings.UPLOAD_ALLOWED_EXTENSIONS, "string"),
@@ -128,6 +130,7 @@ def reset_file_storage_state(db: Session) -> Generator[None]:
             setattr(channel, field, value)
         db.add(channel)
     db.commit()
+    db.info.pop("platform_tenant_id", None)
 
 
 def test_upload_list_and_download_file(
@@ -347,7 +350,10 @@ def test_s3_storage_upload_download_and_presigned_url(
     db.commit()
 
     with (
-        patch("app.storage._get_s3_client", return_value=fake_s3),
+            patch(
+                "app.platform.infra.storage_impl._get_s3_client",
+                return_value=fake_s3,
+            ),
     ):
         upload_response = client.post(
             f"{settings.API_V1_STR}/files/upload",

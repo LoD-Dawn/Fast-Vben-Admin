@@ -27,12 +27,10 @@ from app.api.deps import (
     SessionDep,
     get_current_active_superuser,
 )
-from app.api.routes.sms import create_sms_log, get_template_channel
-from app.audit import create_login_log, get_client_ip, get_user_agent
 from app.core import security
 from app.core.cache import CacheNamespace, redis_cache
+from app.core.clock import get_datetime_utc
 from app.core.config import settings
-from app.core.db import provision_tenant_roles
 from app.core.enterprise_oidc import (
     OIDC_PROVIDER,
     build_pkce_challenge,
@@ -47,14 +45,21 @@ from app.core.enterprise_oidc import (
 from app.core.mfa import consume_recovery_code, decrypt_totp_secret, verify_totp_code
 from app.core.tenancy import DEFAULT_TENANT_CODE, get_active_tenant_membership
 from app.models import (
+    LoginCaptchaChallenge,
+    Message,
+    NewPassword,
+    SmsTemplate,
+    Token,
+)
+from app.platform.bootstrap_rbac import provision_tenant_roles
+from app.platform.core.authorization_models import Role, UserRole
+from app.platform.core.configuration_models import SystemSetting
+from app.platform.core.identity_models import (
     EnterpriseOidcAuthorizationState,
     EnterpriseOidcIdentity,
     EnterpriseOidcLoginTicket,
     EnterpriseOidcStatus,
     EnterpriseOidcTicketExchange,
-    LoginCaptchaChallenge,
-    Message,
-    NewPassword,
     QrCodeLoginChallenge,
     QrCodeLoginConfirmRequest,
     QrCodeLoginConfirmResult,
@@ -63,25 +68,24 @@ from app.models import (
     QrCodeLoginStatus,
     QrCodeLoginStatusRequest,
     RegistrationStatus,
-    Role,
     SmsCodeRequest,
     SmsCodeSent,
     SmsLoginRequest,
-    SmsTemplate,
-    SystemSetting,
+    User,
+    UserPublic,
+    UserSession,
+    UserUpdate,
+)
+from app.platform.core.tenancy_models import (
     Tenant,
     TenantInitializationTemplate,
     TenantMembership,
     TenantPlan,
     TenantRegistrationRequest,
-    Token,
-    User,
-    UserPublic,
-    UserRole,
-    UserSession,
-    UserUpdate,
-    get_datetime_utc,
 )
+from app.platform.infra.audit import create_login_log, get_client_ip, get_user_agent
+from app.platform.infra.sms_router import create_sms_log, get_template_channel
+from app.platform.tenant_uow import activate_platform_tenant_scope
 from app.utils import (
     generate_password_reset_token,
     generate_reset_password_email,
@@ -201,6 +205,7 @@ def is_public_registration_enabled(*, session: SessionDep) -> bool:
     ).first()
     if platform_tenant is None:
         return False
+    activate_platform_tenant_scope(session, platform_tenant.id)
     setting = session.exec(
         select(SystemSetting).where(
             SystemSetting.tenant_id == platform_tenant.id,
@@ -566,6 +571,7 @@ def create_login_token(
     request: Request,
     user: User,
     tenant_id: uuid.UUID | None = None,
+    allow_tenant_switch: bool = False,
 ) -> Token:
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     token_id = str(uuid.uuid4())
@@ -577,6 +583,9 @@ def create_login_token(
     if tenant_membership is None:
         raise HTTPException(status_code=403, detail="User has no active tenant")
     _, tenant = tenant_membership
+    activate_platform_tenant_scope(
+        session, tenant.id, privileged=allow_tenant_switch
+    )
     session.add(
         UserSession(
             user_id=user.id,
@@ -795,6 +804,7 @@ def send_login_sms_code(
         )
 
     tenant = get_login_tenant(session=session, tenant_code=body.tenant_code)
+    activate_platform_tenant_scope(session, tenant.id, privileged=True)
     mobile = normalize_mobile(body.mobile)
     code_key, attempts_key, cooldown_key = get_sms_verification_keys(
         tenant_id=tenant.id,
@@ -1051,6 +1061,7 @@ def register_tenant(
         session.add(owner)
         session.add(tenant)
         session.flush()
+        activate_platform_tenant_scope(session, tenant.id, privileged=True)
         provision_tenant_roles(
             session=session,
             tenant=tenant,
@@ -1161,6 +1172,7 @@ def resolve_enterprise_oidc_user(
             detail="Enterprise OIDC identity is not linked to an active local user",
         )
     _, tenant = tenant_membership
+    activate_platform_tenant_scope(session, tenant.id)
 
     role_codes = role_codes_from_claims(claims)
     roles: list[Role] = []
@@ -1699,6 +1711,7 @@ def reset_password(session: SessionDep, body: NewPassword) -> Message:
         db_user=user,
         user_in=user_in_update,
     )
+    crud.revoke_user_sessions_across_tenants(session=session, user_id=user.id)
     return Message(message="Password updated successfully")
 
 

@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
-from app.api.routes import mail as mail_routes
 from app.core.config import settings
+from app.platform.infra import mail_router as mail_routes
 from tests.utils.utils import random_lower_string
 
 

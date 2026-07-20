@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
+from app.core.clock import get_datetime_utc
 from app.core.config import settings
 from app.models import (
     ModuleRegistry,
@@ -8,7 +9,6 @@ from app.models import (
     OutboxEvent,
     OutboxEventStatus,
     Tenant,
-    get_datetime_utc,
 )
 
 
@@ -118,6 +118,30 @@ def test_module_state_and_entitlement_control_items_access(
     assert any(audit.action == "module.desired_state.changed" for audit in audits)
     assert any(audit.action == "plan.module_entitlement.changed" for audit in audits)
     assert any(audit.action == "tenant.module_preference.changed" for audit in audits)
+
+
+def test_platform_module_cannot_be_disabled_or_entitlement_managed(
+    client: TestClient,
+    superuser_token_headers: dict[str, str],
+    db: Session,
+) -> None:
+    tenant = db.exec(select(Tenant).where(Tenant.code == "default")).one()
+
+    disabled = client.patch(
+        f"{settings.API_V1_STR}/platform/modules/platform",
+        headers=superuser_token_headers,
+        json={"desired_state": "disabled", "reason": "must fail"},
+    )
+    assert disabled.status_code == 400
+    assert disabled.json()["code"] == "PLATFORM_MODULE_REQUIRED"
+
+    entitlement = client.put(
+        f"{settings.API_V1_STR}/platform/modules/plans/{tenant.plan_id}/platform",
+        headers=superuser_token_headers,
+        json={"is_enabled": False},
+    )
+    assert entitlement.status_code == 400
+    assert entitlement.json()["code"] == "PLATFORM_MODULE_REQUIRED"
 
 
 def test_dead_letter_events_can_be_listed_and_requeued(

@@ -11,7 +11,8 @@ from app.api.deps import (
     require_permission,
 )
 from app.core.cache import CacheNamespace, redis_cache
-from app.models import (
+from app.core.clock import get_datetime_utc
+from app.platform.core.authorization_models import (
     Department,
     Menu,
     Role,
@@ -23,7 +24,6 @@ from app.models import (
     RolesPublic,
     RoleUpdate,
     UserRole,
-    get_datetime_utc,
 )
 
 router = APIRouter(prefix="/roles", tags=["roles"])

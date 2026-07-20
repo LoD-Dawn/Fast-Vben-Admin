@@ -2550,7 +2550,7 @@ export type OutboxEventPublic = {
 /**
  * OutboxEventStatus
  */
-export type OutboxEventStatus = 'pending' | 'published' | 'dead_letter';
+export type OutboxEventStatus = 'pending' | 'complete' | 'dead_letter';
 
 /**
  * PostCreate

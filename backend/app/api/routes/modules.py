@@ -6,41 +6,36 @@ from sqlmodel import col, select
 
 from app.api.deps import SessionDep, get_current_active_superuser
 from app.core.cache import CacheNamespace, redis_cache
-from app.core.config import settings
-from app.models import (
+from app.core.clock import get_datetime_utc
+from app.modules.access import (
+    get_runtime_manifest,
+    record_module_state_audit,
+    tenant_has_module_entitlement,
+)
+from app.modules.outbox import dispatch_pending_events, requeue_dead_letter
+from app.platform.core.identity_models import User
+from app.platform.core.runtime_models import (
     ModuleDesiredStateUpdate,
     ModuleRegistry,
     ModuleRegistryPublic,
     OutboxEvent,
     OutboxEventPublic,
     OutboxEventStatus,
-    Tenant,
     TenantModule,
     TenantModuleEntitlementOverride,
     TenantModuleEntitlementOverrideCreate,
     TenantModuleUpdate,
-    TenantPlan,
     TenantPlanModule,
     TenantPlanModuleUpdate,
-    User,
-    get_datetime_utc,
 )
-from app.modules.access import (
-    ensure_module_runtime,
-    record_module_state_audit,
-    tenant_has_module_entitlement,
-)
-from app.modules.outbox import dispatch_pending_events, requeue_dead_letter
+from app.platform.core.tenancy_models import Tenant, TenantPlan
+from app.platform.tenant_uow import PlatformTenantUnitOfWork
 
 router = APIRouter(prefix="/platform/modules", tags=["platform-modules"])
 
 
 def current_build_manifest() -> dict[str, Any]:
-    from app.modules.manifest import build_manifest, load_manifest_file
-
-    if settings.BUILD_MANIFEST_PATH is not None:
-        return load_manifest_file(settings.BUILD_MANIFEST_PATH).public_payload()
-    return build_manifest(edition=settings.APP_EDITION).public_payload()
+    return get_runtime_manifest().public_payload()
 
 
 @router.get("/manifest")
@@ -50,7 +45,6 @@ def read_build_manifest() -> dict[str, Any]:
 
 
 def get_registry_or_404(*, session: SessionDep, module_code: str) -> ModuleRegistry:
-    ensure_module_runtime(session)
     registry = session.get(ModuleRegistry, module_code)
     if registry is None:
         raise HTTPException(status_code=404, detail="Module is not installed")
@@ -63,7 +57,6 @@ def get_registry_or_404(*, session: SessionDep, module_code: str) -> ModuleRegis
     response_model=list[ModuleRegistryPublic],
 )
 def read_module_registry(session: SessionDep) -> list[ModuleRegistryPublic]:
-    ensure_module_runtime(session)
     modules = session.exec(select(ModuleRegistry).order_by(col(ModuleRegistry.code))).all()
     return [ModuleRegistryPublic.model_validate(module) for module in modules]
 
@@ -81,6 +74,8 @@ def update_module_desired_state(
     body: ModuleDesiredStateUpdate,
 ) -> ModuleRegistryPublic:
     module = get_registry_or_404(session=session, module_code=module_code)
+    if module.code == "platform" and body.desired_state.value != "enabled":
+        raise HTTPException(status_code=400, detail="Platform module cannot be disabled")
     previous = module.desired_state
     module.desired_state = body.desired_state
     module.updated_at = get_datetime_utc()
@@ -97,7 +92,16 @@ def update_module_desired_state(
     session.commit()
     session.refresh(module)
     redis_cache.bump_namespace(CacheNamespace.RBAC)
+    redis_cache.bump_namespace(CacheNamespace.MODULE_ACCESS)
     return ModuleRegistryPublic.model_validate(module)
+
+
+def reject_platform_entitlement_management(module_code: str) -> None:
+    if module_code == "platform":
+        raise HTTPException(
+            status_code=400,
+            detail="Platform module entitlement cannot be managed",
+        )
 
 
 @router.put(
@@ -113,6 +117,7 @@ def update_plan_module_entitlement(
     body: TenantPlanModuleUpdate,
 ) -> dict[str, Any]:
     get_registry_or_404(session=session, module_code=module_code)
+    reject_platform_entitlement_management(module_code)
     plan = session.get(TenantPlan, plan_id)
     if plan is None:
         raise HTTPException(status_code=404, detail="Tenant plan not found")
@@ -134,6 +139,7 @@ def update_plan_module_entitlement(
     )
     session.commit()
     redis_cache.bump_namespace(CacheNamespace.RBAC)
+    redis_cache.bump_namespace(CacheNamespace.MODULE_ACCESS)
     return {
         "plan_id": plan_id,
         "module_code": module_code,
@@ -154,32 +160,35 @@ def create_tenant_module_entitlement_override(
     body: TenantModuleEntitlementOverrideCreate,
 ) -> dict[str, Any]:
     get_registry_or_404(session=session, module_code=module_code)
+    reject_platform_entitlement_management(module_code)
     if session.get(Tenant, tenant_id) is None:
         raise HTTPException(status_code=404, detail="Tenant not found")
     if body.ends_at is not None and body.starts_at is not None and body.ends_at <= body.starts_at:
         raise HTTPException(status_code=400, detail="Override end time must be after start time")
-    override = TenantModuleEntitlementOverride(
-        tenant_id=tenant_id,
-        module_code=module_code,
-        effect=body.effect,
-        starts_at=body.starts_at,
-        ends_at=body.ends_at,
-        reason=body.reason,
-        operator_user_id=current_user.id,
-    )
-    session.add(override)
-    record_module_state_audit(
-        session=session,
-        module_code=module_code,
-        tenant_id=tenant_id,
-        action="tenant.module_entitlement_override.created",
-        previous_value=None,
-        next_value=body.effect,
-        reason=body.reason,
-        actor=current_user,
-    )
-    session.commit()
+    with PlatformTenantUnitOfWork(session, tenant_id, privileged=True):
+        override = TenantModuleEntitlementOverride(
+            tenant_id=tenant_id,
+            module_code=module_code,
+            effect=body.effect,
+            starts_at=body.starts_at,
+            ends_at=body.ends_at,
+            reason=body.reason,
+            operator_user_id=current_user.id,
+        )
+        session.add(override)
+        record_module_state_audit(
+            session=session,
+            module_code=module_code,
+            tenant_id=tenant_id,
+            action="tenant.module_entitlement_override.created",
+            previous_value=None,
+            next_value=body.effect,
+            reason=body.reason,
+            actor=current_user,
+        )
+        session.commit()
     redis_cache.bump_namespace(CacheNamespace.RBAC)
+    redis_cache.bump_namespace(CacheNamespace.MODULE_ACCESS)
     return {"id": override.id, "tenant_id": tenant_id, "module_code": module_code}
 
 
@@ -196,36 +205,39 @@ def update_tenant_module_preference(
     body: TenantModuleUpdate,
 ) -> dict[str, Any]:
     get_registry_or_404(session=session, module_code=module_code)
+    reject_platform_entitlement_management(module_code)
     tenant = session.get(Tenant, tenant_id)
     if tenant is None:
         raise HTTPException(status_code=404, detail="Tenant not found")
-    if body.is_enabled and not tenant_has_module_entitlement(
-        session=session,
-        tenant=tenant,
-        module_code=module_code,
-    ):
-        raise HTTPException(
-            status_code=403, detail="Tenant module entitlement is required"
+    with PlatformTenantUnitOfWork(session, tenant_id, privileged=True):
+        if body.is_enabled and not tenant_has_module_entitlement(
+            session=session,
+            tenant=tenant,
+            module_code=module_code,
+        ):
+            raise HTTPException(
+                status_code=403, detail="Tenant module entitlement is required"
+            )
+        preference = session.get(TenantModule, (tenant_id, module_code))
+        previous = preference.is_enabled if preference is not None else None
+        if preference is None:
+            preference = TenantModule(tenant_id=tenant_id, module_code=module_code)
+        preference.is_enabled = body.is_enabled
+        preference.updated_at = get_datetime_utc()
+        session.add(preference)
+        record_module_state_audit(
+            session=session,
+            module_code=module_code,
+            tenant_id=tenant_id,
+            action="tenant.module_preference.changed",
+            previous_value=str(previous).lower() if previous is not None else None,
+            next_value=str(body.is_enabled).lower(),
+            reason=None,
+            actor=current_user,
         )
-    preference = session.get(TenantModule, (tenant_id, module_code))
-    previous = preference.is_enabled if preference is not None else None
-    if preference is None:
-        preference = TenantModule(tenant_id=tenant_id, module_code=module_code)
-    preference.is_enabled = body.is_enabled
-    preference.updated_at = get_datetime_utc()
-    session.add(preference)
-    record_module_state_audit(
-        session=session,
-        module_code=module_code,
-        tenant_id=tenant_id,
-        action="tenant.module_preference.changed",
-        previous_value=str(previous).lower() if previous is not None else None,
-        next_value=str(body.is_enabled).lower(),
-        reason=None,
-        actor=current_user,
-    )
-    session.commit()
+        session.commit()
     redis_cache.bump_namespace(CacheNamespace.RBAC)
+    redis_cache.bump_namespace(CacheNamespace.MODULE_ACCESS)
     return {
         "tenant_id": tenant_id,
         "module_code": module_code,

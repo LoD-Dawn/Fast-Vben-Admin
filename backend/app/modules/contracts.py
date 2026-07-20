@@ -24,6 +24,13 @@ class CapabilityProvision:
 class EventContract:
     event_type: str
     version: int
+    allow_zero_subscribers: bool = False
+
+
+@dataclass(frozen=True)
+class ReferenceGuardSpec:
+    reference_type: str
+    handler: Callable[[Any, str, object, object | None], int] | None
 
 
 @dataclass(frozen=True)
@@ -44,6 +51,7 @@ class LifecycleHooks:
     on_ready: Callable[[], None] | None = None
     on_disabled: Callable[[], None] | None = None
     health_check: Callable[[], dict[str, Any]] | None = None
+    register_event_handlers: Callable[[], None] | None = None
 
 
 @dataclass(frozen=True)
@@ -63,6 +71,6 @@ class ModuleDefinition:
     event_subscribers: tuple[EventContract, ...] = ()
     workers: tuple[str, ...] = ()
     schedules: tuple[str, ...] = ()
-    reference_guards: tuple[str, ...] = ()
+    reference_guards: tuple[ReferenceGuardSpec, ...] = ()
     menus: tuple[str, ...] = ()
     lifecycle: LifecycleHooks = field(default_factory=LifecycleHooks)

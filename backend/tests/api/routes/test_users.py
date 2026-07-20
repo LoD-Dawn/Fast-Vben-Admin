@@ -9,7 +9,9 @@ from app import crud
 from app.core.config import settings
 from app.core.mfa import encrypt_totp_secret, serialize_recovery_codes
 from app.core.security import verify_password
+from app.core.tenancy import DEFAULT_TENANT_ID
 from app.models import Post, User, UserCreate, UserPost
+from app.platform.tenant_uow import PlatformTenantUnitOfWork
 from tests.utils.user import create_random_user, user_authentication_headers
 from tests.utils.utils import random_email, random_lower_string
 
@@ -839,10 +841,11 @@ def test_superuser_can_update_and_read_user_posts(
         session=db,
         user_create=UserCreate(email=random_email(), password=random_lower_string()),
     )
-    post = Post(code=f"post_{random_lower_string()}", name="User post")
-    db.add(post)
-    db.commit()
-    db.refresh(post)
+    with PlatformTenantUnitOfWork(db, DEFAULT_TENANT_ID, privileged=True):
+        post = Post(code=f"post_{random_lower_string()}", name="User post")
+        db.add(post)
+        db.commit()
+        db.refresh(post)
 
     try:
         update_response = client.put(
@@ -862,9 +865,10 @@ def test_superuser_can_update_and_read_user_posts(
         assert len(posts) == 1
         assert posts[0]["id"] == str(post.id)
     finally:
-        db.exec(delete(UserPost).where(UserPost.user_id == user.id))
+        with PlatformTenantUnitOfWork(db, DEFAULT_TENANT_ID, privileged=True):
+            db.exec(delete(UserPost).where(UserPost.user_id == user.id))
+            db.delete(post)
         db.delete(user)
-        db.delete(post)
         db.commit()
 
 

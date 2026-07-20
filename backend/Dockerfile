@@ -11,6 +11,8 @@ RUN pip install --no-cache-dir uv==0.9.26
 
 WORKDIR /app/backend
 
+ARG BUILD_MANIFEST=artifacts/suite/build-manifest.json
+
 COPY ./backend/pyproject.toml ./backend/uv.lock ./backend/alembic.ini ./
 
 RUN --mount=type=cache,target=/root/.cache/uv \
@@ -19,5 +21,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY ./backend/scripts ./scripts
 COPY ./backend/app ./app
 COPY ./editions /app/editions
+COPY ${BUILD_MANIFEST} /app/build/build-manifest.json
+
+ENV BUILD_MANIFEST_PATH=/app/build/build-manifest.json
 
 CMD ["fastapi", "run", "app/main.py", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]

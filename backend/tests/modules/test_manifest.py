@@ -7,6 +7,7 @@ from app.api.main import create_api_router
 from app.models import ModuleDesiredState, ModuleObservedState, ModuleRegistry
 from app.modules.access import validate_module_runtime
 from app.modules.contracts import MigrationSpec, ModuleDefinition
+from app.modules.events import validate_event_contracts
 from app.modules.manifest import (
     build_manifest,
     load_manifest_file,
@@ -35,8 +36,33 @@ def test_suite_edition_includes_items_module() -> None:
     paths = schema_paths_for("suite")
 
     assert [module.code for module in manifest.modules] == ["platform", "items"]
+    assert manifest.schema_version == 2
+    assert len(manifest.source_revision) == 40
+    assert manifest.modules[0].migration_heads
+    assert manifest.modules[0].openapi_sha256.startswith("sha256:")
     assert "/api/v1/items" in paths
     assert manifest.manifest_digest == manifest_digest(manifest.canonical_payload())
+
+    assert build_manifest(edition="suite") == manifest
+
+
+def test_manifest_digest_changes_with_module_contract_inputs(monkeypatch) -> None:
+    baseline = build_manifest(edition="base")
+
+    monkeypatch.setattr(
+        "app.modules.manifest.module_migration_heads", lambda **_kwargs: ["next-head"]
+    )
+    changed_head = build_manifest(edition="base")
+
+    assert changed_head.manifest_digest != baseline.manifest_digest
+
+    monkeypatch.undo()
+    monkeypatch.setattr(
+        "app.modules.manifest.module_openapi_sha256",
+        lambda _definition: "sha256:changed-contract",
+    )
+    changed_openapi = build_manifest(edition="base")
+    assert changed_openapi.manifest_digest != baseline.manifest_digest
 
 
 def test_manifest_file_is_verified_against_current_definitions(tmp_path: Path) -> None:
@@ -51,6 +77,19 @@ def test_manifest_file_is_verified_against_current_definitions(tmp_path: Path) -
     )
     with pytest.raises(ValueError, match="digest"):
         load_manifest_file(output)
+
+
+def test_manifest_file_load_does_not_require_git_at_runtime(
+    monkeypatch, tmp_path: Path
+) -> None:
+    output = tmp_path / "build-manifest.json"
+    expected = write_manifest(edition="base", output=output)
+
+    monkeypatch.setattr(
+        "app.modules.manifest.source_revision",
+        lambda: (_ for _ in ()).throw(AssertionError("git must not be called")),
+    )
+    assert load_manifest_file(output) == expected
 
 
 def test_module_dependency_cycles_are_rejected() -> None:
@@ -102,3 +141,28 @@ def test_runtime_validation_rejects_enabled_module_absent_from_manifest(db) -> N
     finally:
         db.delete(registry)
         db.commit()
+
+
+def test_platform_event_contracts_cover_published_events() -> None:
+    definition = get_module_definitions()["platform"]
+
+    assert {
+        (contract.event_type, contract.version, contract.allow_zero_subscribers)
+        for contract in definition.event_publishers
+    } == {
+        ("platform.module.observed_state.changed", 1, True),
+        ("platform.department.archived", 1, True),
+        ("platform.post.archived", 1, True),
+        ("platform.tenant.archived", 1, True),
+        ("platform.user.archived", 1, True),
+        ("platform.user.anonymized", 1, True),
+    }
+    validate_event_contracts((definition,))
+
+
+def test_items_publishes_a_versioned_public_event_contract() -> None:
+    definition = get_module_definitions()["items"]
+
+    assert [(event.event_type, event.version) for event in definition.event_publishers] == [
+        ("items.item.changed", 1)
+    ]

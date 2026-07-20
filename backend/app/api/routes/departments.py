@@ -10,16 +10,17 @@ from app.api.deps import (
     normalize_pagination,
     require_permission,
 )
-from app.models import (
+from app.core.clock import get_datetime_utc
+from app.modules.outbox import enqueue_event
+from app.modules.platform_events import DepartmentArchivedV1
+from app.platform.core.authorization_models import (
     Department,
     DepartmentCreate,
     DepartmentPublic,
     DepartmentsPublic,
     DepartmentUpdate,
-    TenantMembership,
-    get_datetime_utc,
 )
-from app.modules.outbox import enqueue_event
+from app.platform.core.tenancy_models import TenantMembership
 
 router = APIRouter(prefix="/departments", tags=["departments"])
 
@@ -272,11 +273,12 @@ def delete_department(
         event_type="platform.department.archived",
         tenant_id=tenant_context.tenant_id,
         aggregate_id=str(department.id),
-        payload={
-            "department_id": str(department.id),
-            "tenant_id": str(tenant_context.tenant_id),
-            "name": department.name,
-        },
+        payload=DepartmentArchivedV1(
+            department_id=department.id,
+            tenant_id=tenant_context.tenant_id,
+            name=department.name,
+        ).model_dump(mode="json"),
+        allow_zero_subscribers=True,
     )
     session.commit()
     return Response(status_code=204)

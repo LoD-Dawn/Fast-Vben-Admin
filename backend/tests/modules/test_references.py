@@ -1,17 +1,19 @@
 import uuid
+from dataclasses import replace
 
 import pytest
 from sqlmodel import Session
 
 from app import crud
 from app.models import Tenant, UserCreate
+from app.modules.contracts import ReferenceGuardSpec
 from app.modules.items.infrastructure.models import Item
 from app.modules.references import (
-    REFERENCE_GUARDS,
     ReferenceGuardUnavailableError,
     assert_no_references,
     find_references,
 )
+from app.modules.registry import MODULE_DEFINITIONS
 from tests.utils.utils import random_email, random_lower_string
 
 
@@ -48,7 +50,11 @@ def test_reference_guard_reports_item_user_references(db: Session) -> None:
 
 
 def test_missing_installed_module_reference_guard_fails_closed(db: Session) -> None:
-    guard = REFERENCE_GUARDS.pop("items")
+    original = MODULE_DEFINITIONS["items"]
+    MODULE_DEFINITIONS["items"] = replace(
+        original,
+        reference_guards=(ReferenceGuardSpec("user", None),),
+    )
     try:
         with pytest.raises(ReferenceGuardUnavailableError, match="items"):
             find_references(
@@ -57,4 +63,4 @@ def test_missing_installed_module_reference_guard_fails_closed(db: Session) -> N
                 reference_id=uuid.uuid4(),
             )
     finally:
-        REFERENCE_GUARDS["items"] = guard
+        MODULE_DEFINITIONS["items"] = original

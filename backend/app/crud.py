@@ -3,17 +3,18 @@ from typing import Any
 
 from sqlmodel import Session, select
 
+from app.core.clock import get_datetime_utc
 from app.core.security import get_password_hash, verify_password
 from app.core.tenancy import add_user_to_tenant, get_default_tenant
-from app.models import (
-    Role,
+from app.platform.core.authorization_models import Role, UserRole
+from app.platform.core.identity_models import (
     User,
     UserCreate,
-    UserRole,
     UserSession,
     UserUpdate,
-    get_datetime_utc,
 )
+from app.platform.core.tenancy_models import TenantMembership
+from app.platform.tenant_uow import PlatformTenantUnitOfWork
 
 
 def create_user(
@@ -82,6 +83,17 @@ def revoke_user_sessions(*, session: Session, user_id: uuid.UUID) -> None:
     for user_session in user_sessions:
         user_session.revoked_at = revoked_at
         session.add(user_session)
+
+
+def revoke_user_sessions_across_tenants(*, session: Session, user_id: uuid.UUID) -> None:
+    """Revoke a user's sessions when no request tenant has been authenticated."""
+    tenant_ids = session.exec(
+        select(TenantMembership.tenant_id).where(TenantMembership.user_id == user_id)
+    ).all()
+    for tenant_id in tenant_ids:
+        with PlatformTenantUnitOfWork(session, tenant_id, privileged=True):
+            revoke_user_sessions(session=session, user_id=user_id)
+            session.commit()
 
 
 def get_user_by_email(*, session: Session, email: str) -> User | None:

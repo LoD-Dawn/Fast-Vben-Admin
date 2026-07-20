@@ -1,19 +1,10 @@
-from collections.abc import Callable
-
 from sqlmodel import Session
 
 from app.core.config import settings
 
-ReferenceGuard = Callable[[Session, str, object, object | None], int]
-REFERENCE_GUARDS: dict[str, ReferenceGuard] = {}
-
 
 class ReferenceGuardUnavailableError(ValueError):
     """Raised when an installed module cannot attest to a destructive action."""
-
-
-def register_reference_guard(module_code: str, guard: ReferenceGuard) -> None:
-    REFERENCE_GUARDS[module_code] = guard
 
 
 def find_references(
@@ -32,15 +23,22 @@ def find_references(
     references: dict[str, int] = {}
     for module in manifest.modules:
         definition = definitions[module.code]
-        if reference_type not in definition.reference_guards:
+        guard_spec = next(
+            (
+                guard
+                for guard in definition.reference_guards
+                if guard.reference_type == reference_type
+            ),
+            None,
+        )
+        if guard_spec is None:
             continue
-        guard = REFERENCE_GUARDS.get(module.code)
-        if guard is None:
+        if guard_spec.handler is None:
             raise ReferenceGuardUnavailableError(
                 f"Reference guard unavailable for installed module: {module.code}"
             )
         try:
-            count = guard(session, reference_type, reference_id, tenant_id)
+            count = guard_spec.handler(session, reference_type, reference_id, tenant_id)
         except Exception as exc:
             raise ReferenceGuardUnavailableError(
                 f"Reference guard failed for installed module: {module.code}"

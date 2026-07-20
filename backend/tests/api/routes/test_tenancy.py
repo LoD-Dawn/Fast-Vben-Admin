@@ -779,7 +779,7 @@ def test_files_messages_channels_and_logs_are_isolated_between_tenants(
                 f"{settings.API_V1_STR}/files/{default_file['id']}/download",
                 headers=tenant_headers,
             ).status_code
-            == 403
+            == 404
         )
 
         tenant_notice_response = client.post(

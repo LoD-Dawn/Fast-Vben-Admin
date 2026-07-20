@@ -1,10 +1,16 @@
 import hashlib
 import json
+import os
 import re
+import subprocess
 from collections.abc import Mapping
 from pathlib import Path
+from typing import Literal
 
 import yaml
+from alembic.config import Config
+from alembic.script import ScriptDirectory
+from fastapi import APIRouter, FastAPI
 from pydantic import BaseModel, Field
 
 from app.modules.capabilities import validate_capability_requirements
@@ -17,17 +23,26 @@ EDITION_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_-]*$")
 class ManifestModule(BaseModel):
     code: str
     version: str
+    migration_namespace: str
+    migration_heads: list[str] = Field(default_factory=list)
+    openapi_sha256: str
 
 
 class BuildManifest(BaseModel):
+    schema_version: Literal[2] = 2
     edition: str
+    source_revision: str
+    platform_contract_version: int = 1
     platform_version: str
     modules: list[ManifestModule] = Field(default_factory=list)
     manifest_digest: str
 
     def canonical_payload(self) -> dict[str, object]:
         return {
+            "schema_version": self.schema_version,
             "edition": self.edition,
+            "source_revision": self.source_revision,
+            "platform_contract_version": self.platform_contract_version,
             "platform_version": self.platform_version,
             "modules": [module.model_dump() for module in self.modules],
         }
@@ -55,6 +70,48 @@ def _canonical_json(payload: Mapping[str, object]) -> bytes:
 
 def manifest_digest(payload: Mapping[str, object]) -> str:
     return f"sha256:{hashlib.sha256(_canonical_json(payload)).hexdigest()}"
+
+
+def sha256_digest(payload: Mapping[str, object]) -> str:
+    return f"sha256:{hashlib.sha256(_canonical_json(payload)).hexdigest()}"
+
+
+def source_revision() -> str:
+    """Return the commit that produced the artifact, with an explicit CI override."""
+    configured = os.environ.get("SOURCE_REVISION")
+    if configured:
+        return configured
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repository_root(),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    revision = result.stdout.strip()
+    if result.returncode != 0 or not re.fullmatch(r"[0-9a-f]{40}", revision):
+        raise ValueError("Unable to determine source revision; set SOURCE_REVISION")
+    return revision
+
+
+def module_migration_heads(*, namespace: str) -> list[str]:
+    config = Config(str(repository_root() / "backend" / "alembic.ini"))
+    if namespace != "platform":
+        config.set_main_option(
+            "script_location",
+            str(repository_root() / "backend" / "app" / "modules" / namespace / "migrations"),
+        )
+    return sorted(ScriptDirectory.from_config(config).get_heads())
+
+
+def module_openapi_sha256(definition: ModuleDefinition) -> str:
+    """Hash the module's public OpenAPI surface without constructing the app lifespan."""
+    api = FastAPI(openapi_url=None)
+    router = APIRouter()
+    for module_router in definition.routers:
+        router.include_router(module_router)
+    api.include_router(router, prefix="/api/v1")
+    return sha256_digest(api.openapi())
 
 
 def load_edition_modules(*, edition: str, directory: Path | None = None) -> list[str]:
@@ -115,6 +172,7 @@ def build_manifest(
     edition: str,
     directory: Path | None = None,
     definitions: Mapping[str, ModuleDefinition] | None = None,
+    source_revision_override: str | None = None,
 ) -> BuildManifest:
     module_codes = load_edition_modules(edition=edition, directory=directory)
     resolved = resolve_module_definitions(module_codes, definitions)
@@ -123,13 +181,26 @@ def build_manifest(
     if platform is None:
         raise ValueError("Every edition must include the platform module")
 
+    source = source_revision_override or source_revision()
+    manifest_modules = [
+        ManifestModule(
+            code=definition.code,
+            version=definition.version,
+            migration_namespace=definition.migration.namespace,
+            migration_heads=module_migration_heads(
+                namespace=definition.migration.namespace
+            ),
+            openapi_sha256=module_openapi_sha256(definition),
+        )
+        for definition in resolved
+    ]
     payload: dict[str, object] = {
+        "schema_version": 2,
         "edition": edition,
+        "source_revision": source,
+        "platform_contract_version": 1,
         "platform_version": platform.version,
-        "modules": [
-            {"code": definition.code, "version": definition.version}
-            for definition in resolved
-        ],
+        "modules": [module.model_dump() for module in manifest_modules],
     }
     return BuildManifest(**payload, manifest_digest=manifest_digest(payload))
 
@@ -144,7 +215,10 @@ def load_manifest_file(path: Path) -> BuildManifest:
     if manifest.manifest_digest != expected_digest:
         raise ValueError(f"Build manifest digest does not match: {path}")
 
-    expected = build_manifest(edition=manifest.edition)
+    expected = build_manifest(
+        edition=manifest.edition,
+        source_revision_override=manifest.source_revision,
+    )
     if manifest != expected:
         raise ValueError(f"Build manifest does not match the current module definitions: {path}")
     return manifest

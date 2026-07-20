@@ -17,9 +17,10 @@ from app.api.deps import (
     normalize_pagination,
     require_permission,
 )
+from app.core.clock import get_datetime_utc
 from app.core.mfa import decrypt_secret, encrypt_secret
 from app.core.security import verify_password
-from app.models import (
+from app.platform.core.identity_models import (
     OAuth2AccessToken,
     OAuth2AccessTokenPublic,
     OAuth2AccessTokensPublic,
@@ -30,7 +31,6 @@ from app.models import (
     OAuth2ClientsPublic,
     OAuth2ClientUpdate,
     User,
-    get_datetime_utc,
 )
 
 router = APIRouter(prefix="/oauth2", tags=["oauth2"])

@@ -26,6 +26,8 @@ jobs:
 
     env:
       ACCESS_TOKEN_EXPIRE_MINUTES: 11520
+      APP_RUNTIME_DB_PASSWORD: test-runtime-password
+      APP_RUNTIME_DB_USER: app_runtime
       BACKEND_CORS_ORIGINS: '["http://localhost:5173","http://localhost"]'
       DOMAIN: localhost
       EMAILS_FROM_EMAIL: info@example.com
@@ -61,7 +63,29 @@ jobs:
 
       - name: Run migrations
         working-directory: backend
-        run: uv run python -m app.modules.migrate --edition suite
+        run: |
+          uv run python -m app.platform.provision_db_roles
+          uv run python -m app.modules.migrate --edition suite
+          uv run python -m app.platform.provision_db_roles
+
+      - name: Verify RLS and runtime APIs under the runtime database role
+        working-directory: backend
+        env:
+          POSTGRES_PASSWORD: test-runtime-password
+          POSTGRES_USER: app_runtime
+        run: >-
+          uv run pytest
+          tests/platform/test_platform_tenant_scope.py
+          tests/api/routes/test_files.py
+          tests/api/routes/test_mail.py
+          tests/api/routes/test_modules.py
+          tests/api/routes/test_audit_logs.py
+          tests/api/routes/test_login.py
+          tests/api/routes/test_sms.py
+          tests/api/routes/test_social.py
+          tests/api/routes/test_tenants.py
+          tests/api/routes/test_users.py
+          tests/modules/test_access.py
 
       - name: Test
         working-directory: backend

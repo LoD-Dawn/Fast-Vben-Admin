@@ -31,6 +31,7 @@ from app.models import (
     UserRole,
     UserSession,
 )
+from app.platform.tenant_uow import PlatformTenantUnitOfWork
 from app.storage import delete_stored_file
 from tests.utils.utils import get_superuser_token_headers, random_lower_string
 
@@ -53,9 +54,10 @@ def test_superuser_can_create_switch_and_archive_tenant(
         tenant_uuid = create_response.json()["id"]
         tenant = db.get(Tenant, tenant_uuid)
         assert tenant is not None
-        role_codes = set(
-            db.exec(select(Role.code).where(Role.tenant_id == tenant.id)).all()
-        )
+        with PlatformTenantUnitOfWork(db, tenant.id, privileged=True):
+            role_codes = set(
+                db.exec(select(Role.code).where(Role.tenant_id == tenant.id)).all()
+            )
         assert role_codes == {"admin", "super_admin", "user"}
 
         my_tenants_response = client.get(
@@ -118,12 +120,13 @@ def test_superuser_can_create_switch_and_archive_tenant(
         platform_menu = db.exec(
             select(Menu).where(Menu.permission_code == "platform:tenant:list")
         ).one()
-        tenant_admin_role_ids = db.exec(
-            select(Role.id).where(
-                Role.tenant_id == tenant.id,
-                Role.code.in_(["admin", "super_admin"]),
-            )
-        ).all()
+        with PlatformTenantUnitOfWork(db, tenant.id, privileged=True):
+            tenant_admin_role_ids = db.exec(
+                select(Role.id).where(
+                    Role.tenant_id == tenant.id,
+                    Role.code.in_(["admin", "super_admin"]),
+                )
+            ).all()
         assert not db.exec(
             select(RoleMenu).where(
                 RoleMenu.role_id.in_(tenant_admin_role_ids),
@@ -153,17 +156,24 @@ def test_superuser_can_create_switch_and_archive_tenant(
         )
         assert rejected_switch.status_code == 403
         assert rejected_switch.json()["code"] == "TENANT_MEMBERSHIP_REQUIRED"
+        assert (
+            client.get(
+                f"{settings.API_V1_STR}/users/me", headers=default_headers
+            ).status_code
+            == 200
+        )
     finally:
         tenant = db.exec(select(Tenant).where(Tenant.code == code)).first()
         if tenant is not None:
-            db.exec(delete(UserSession).where(UserSession.tenant_id == tenant.id))
-            db.exec(delete(UserRole).where(UserRole.tenant_id == tenant.id))
+            with PlatformTenantUnitOfWork(db, tenant.id, privileged=True):
+                db.exec(delete(UserSession).where(UserSession.tenant_id == tenant.id))
+                db.exec(delete(UserRole).where(UserRole.tenant_id == tenant.id))
+                roles = db.exec(select(Role).where(Role.tenant_id == tenant.id)).all()
+                for role in roles:
+                    db.delete(role)
             db.exec(
                 delete(TenantMembership).where(TenantMembership.tenant_id == tenant.id)
             )
-            roles = db.exec(select(Role).where(Role.tenant_id == tenant.id)).all()
-            for role in roles:
-                db.delete(role)
             db.commit()
             db.delete(tenant)
             db.commit()
@@ -332,27 +342,28 @@ def test_tenant_initialization_template_controls_seed_data(
 
         tenant = db.get(Tenant, tenant_id)
         assert tenant is not None
-        departments = db.exec(
-            select(Department).where(Department.tenant_id == tenant.id)
-        ).all()
-        assert [(department.code, department.name) for department in departments] == [
-            ("root", "Root Department")
-        ]
-        assert set(
-            db.exec(select(Role.code).where(Role.tenant_id == tenant.id)).all()
-        ) == {"admin", "super_admin", "user"}
-        for model in (
-            Post,
-            DictionaryType,
-            SystemSetting,
-            FileStorageChannel,
-            SiteMessageTemplate,
-            SmsChannel,
-            MailAccount,
-        ):
-            assert not db.exec(
-                select(model).where(model.tenant_id == tenant.id)
-            ).first()
+        with PlatformTenantUnitOfWork(db, tenant.id, privileged=True):
+            departments = db.exec(
+                select(Department).where(Department.tenant_id == tenant.id)
+            ).all()
+            assert [(department.code, department.name) for department in departments] == [
+                ("root", "Root Department")
+            ]
+            assert set(
+                db.exec(select(Role.code).where(Role.tenant_id == tenant.id)).all()
+            ) == {"admin", "super_admin", "user"}
+            for model in (
+                Post,
+                DictionaryType,
+                SystemSetting,
+                FileStorageChannel,
+                SiteMessageTemplate,
+                SmsChannel,
+                MailAccount,
+            ):
+                assert not db.exec(
+                    select(model).where(model.tenant_id == tenant.id)
+                ).first()
 
         in_use_response = client.delete(
             f"{settings.API_V1_STR}/tenants/templates/{template_id}",
@@ -364,17 +375,18 @@ def test_tenant_initialization_template_controls_seed_data(
         if tenant_id is not None:
             tenant = db.get(Tenant, tenant_id)
             if tenant is not None:
-                db.exec(delete(UserSession).where(UserSession.tenant_id == tenant.id))
-                db.exec(delete(UserRole).where(UserRole.tenant_id == tenant.id))
+                with PlatformTenantUnitOfWork(db, tenant.id, privileged=True):
+                    db.exec(delete(UserSession).where(UserSession.tenant_id == tenant.id))
+                    db.exec(delete(UserRole).where(UserRole.tenant_id == tenant.id))
+                    for role in db.exec(
+                        select(Role).where(Role.tenant_id == tenant.id)
+                    ).all():
+                        db.delete(role)
                 db.exec(
                     delete(TenantMembership).where(
                         TenantMembership.tenant_id == tenant.id
                     )
                 )
-                for role in db.exec(
-                    select(Role).where(Role.tenant_id == tenant.id)
-                ).all():
-                    db.delete(role)
                 db.commit()
                 db.delete(tenant)
                 db.commit()
@@ -531,30 +543,33 @@ def test_tenant_plan_quotas_are_enforced(
     finally:
         db.rollback()
         if file_id is not None:
-            file_asset = db.get(FileAsset, file_id)
-            if file_asset is not None:
-                delete_stored_file(
-                    file_asset.storage_provider,
-                    file_asset.storage_path,
-                    db,
-                    file_asset.tenant_id,
-                )
-                db.delete(file_asset)
-                db.commit()
+            if tenant_id is not None:
+                with PlatformTenantUnitOfWork(db, tenant_id, privileged=True):
+                    file_asset = db.get(FileAsset, file_id)
+                    if file_asset is not None:
+                        delete_stored_file(
+                            file_asset.storage_provider,
+                            file_asset.storage_path,
+                            db,
+                            file_asset.tenant_id,
+                        )
+                        db.delete(file_asset)
+                        db.commit()
         if tenant_id is not None:
             tenant = db.get(Tenant, tenant_id)
             if tenant is not None:
-                db.exec(delete(UserSession).where(UserSession.tenant_id == tenant.id))
-                db.exec(delete(UserRole).where(UserRole.tenant_id == tenant.id))
+                with PlatformTenantUnitOfWork(db, tenant.id, privileged=True):
+                    db.exec(delete(UserSession).where(UserSession.tenant_id == tenant.id))
+                    db.exec(delete(UserRole).where(UserRole.tenant_id == tenant.id))
+                    for role in db.exec(
+                        select(Role).where(Role.tenant_id == tenant.id)
+                    ).all():
+                        db.delete(role)
                 db.exec(
                     delete(TenantMembership).where(
                         TenantMembership.tenant_id == tenant.id
                     )
                 )
-                for role in db.exec(
-                    select(Role).where(Role.tenant_id == tenant.id)
-                ).all():
-                    db.delete(role)
                 db.commit()
                 db.delete(tenant)
                 db.commit()
@@ -619,16 +634,17 @@ def test_tenant_operations_lifecycle_and_administrator_provisioning(
             )
         ).one()
         assert membership.is_active
-        administrator_roles = set(
-            db.exec(
-                select(Role.code)
-                .join(UserRole, UserRole.role_id == Role.id)
-                .where(
-                    UserRole.user_id == administrator.id,
-                    UserRole.tenant_id == profile.tenant_id,
-                )
-            ).all()
-        )
+        with PlatformTenantUnitOfWork(db, profile.tenant_id, privileged=True):
+            administrator_roles = set(
+                db.exec(
+                    select(Role.code)
+                    .join(UserRole, UserRole.role_id == Role.id)
+                    .where(
+                        UserRole.user_id == administrator.id,
+                        UserRole.tenant_id == profile.tenant_id,
+                    )
+                ).all()
+            )
         assert administrator_roles == {"super_admin"}
 
         list_response = client.get(
@@ -770,7 +786,8 @@ def test_tenant_operations_lifecycle_and_administrator_provisioning(
         db.rollback()
         tenant = db.exec(select(Tenant).where(Tenant.code == tenant_code)).first()
         if tenant is not None:
-            db.exec(delete(UserSession).where(UserSession.tenant_id == tenant.id))
+            with PlatformTenantUnitOfWork(db, tenant.id, privileged=True):
+                db.exec(delete(UserSession).where(UserSession.tenant_id == tenant.id))
             db.commit()
             db.delete(tenant)
             db.commit()
@@ -854,27 +871,31 @@ def test_tenant_plan_menu_authorization_and_sync(
         )
         assert tenant_response.status_code == 200
         tenant_id = tenant_response.json()["id"]
-        roles = db.exec(select(Role).where(Role.tenant_id == tenant_id)).all()
-        role_by_code = {role.code: role for role in roles}
+        with PlatformTenantUnitOfWork(db, tenant_id, privileged=True):
+            roles = db.exec(select(Role).where(Role.tenant_id == tenant_id)).all()
+            role_by_code = {role.code: role for role in roles}
+            super_admin_role_id = role_by_code["super_admin"].id
         super_admin_menu_ids = set(
             db.exec(
                 select(RoleMenu.menu_id).where(
-                    RoleMenu.role_id == role_by_code["super_admin"].id
+                    RoleMenu.role_id == super_admin_role_id
                 )
             ).all()
         )
         assert super_admin_menu_ids == {dashboard_menu.id, item_menu.id}
 
-        custom_role = Role(
-            tenant_id=tenant_id,
-            code="custom",
-            name="Custom role",
-            is_system=False,
-        )
-        db.add(custom_role)
-        db.flush()
-        db.add(RoleMenu(role_id=custom_role.id, menu_id=item_menu.id))
-        db.commit()
+        with PlatformTenantUnitOfWork(db, tenant_id, privileged=True):
+            custom_role = Role(
+                tenant_id=tenant_id,
+                code="custom",
+                name="Custom role",
+                is_system=False,
+            )
+            db.add(custom_role)
+            db.flush()
+            custom_role_id = custom_role.id
+            db.add(RoleMenu(role_id=custom_role.id, menu_id=item_menu.id))
+            db.commit()
 
         reduce_response = client.put(
             f"{settings.API_V1_STR}/tenants/plans/{plan_id}/menus",
@@ -913,14 +934,14 @@ def test_tenant_plan_menu_authorization_and_sync(
         synced_super_admin_menu_ids = set(
             db.exec(
                 select(RoleMenu.menu_id).where(
-                    RoleMenu.role_id == role_by_code["super_admin"].id
+                    RoleMenu.role_id == super_admin_role_id
                 )
             ).all()
         )
         assert synced_super_admin_menu_ids == {dashboard_menu.id}
         assert db.exec(
             select(RoleMenu).where(
-                RoleMenu.role_id == custom_role.id,
+                RoleMenu.role_id == custom_role_id,
                 RoleMenu.menu_id == item_menu.id,
             )
         ).one()
@@ -937,7 +958,8 @@ def test_tenant_plan_menu_authorization_and_sync(
         db.rollback()
         tenant = db.exec(select(Tenant).where(Tenant.code == tenant_code)).first()
         if tenant is not None:
-            db.exec(delete(UserSession).where(UserSession.tenant_id == tenant.id))
+            with PlatformTenantUnitOfWork(db, tenant.id, privileged=True):
+                db.exec(delete(UserSession).where(UserSession.tenant_id == tenant.id))
             db.commit()
             db.delete(tenant)
             db.commit()

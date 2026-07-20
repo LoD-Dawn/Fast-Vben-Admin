@@ -149,13 +149,13 @@ def test_superuser_permissions_use_cached_payload(
     superuser_token_headers: dict[str, str],
     monkeypatch,
 ) -> None:
-    cache_store: dict[str, list[str]] = {}
+    cache_store: dict[str, object] = {}
 
-    def fake_get_json(key: str) -> list[str] | None:
+    def fake_get_json(key: str) -> object | None:
         return cache_store.get(key)
 
     def fake_set_json(
-        key: str, value: list[str], *, _ttl_seconds: int | None = None
+        key: str, value: object, *, _ttl_seconds: int | None = None
     ) -> None:
         cache_store[key] = value
 
@@ -169,8 +169,12 @@ def test_superuser_permissions_use_cached_payload(
     assert first_response.status_code == 200
     assert cache_store
 
-    cache_key = next(iter(cache_store))
-    cache_store[cache_key] = [*cache_store[cache_key], "cached:permission"]
+    cache_key = next(
+        key for key in cache_store if ":rbac:" in key and ":permissions:" in key
+    )
+    cached_permissions = cache_store[cache_key]
+    assert isinstance(cached_permissions, list)
+    cache_store[cache_key] = [*cached_permissions, "cached:permission"]
 
     second_response = client.get(
         f"{settings.API_V1_STR}/permissions/me",
