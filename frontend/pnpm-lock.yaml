@@ -663,6 +663,9 @@ importers:
       ant-design-vue:
         specifier: 'catalog:'
         version: 4.2.6(vue@3.5.38(typescript@6.0.3))
+      bignumber.js:
+        specifier: 9.3.1
+        version: 9.3.1
       dayjs:
         specifier: 'catalog:'
         version: 1.11.21

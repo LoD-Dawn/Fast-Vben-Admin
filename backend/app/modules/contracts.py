@@ -28,6 +28,15 @@ class EventContract:
 
 
 @dataclass(frozen=True)
+class ScheduleHandler:
+    """A tenant-local job made available to the composition-root scheduler."""
+
+    code: str
+    interval_seconds: float
+    handler: Callable[[object, object], None]
+
+
+@dataclass(frozen=True)
 class ReferenceGuardSpec:
     reference_type: str
     handler: Callable[[Any, str, object, object | None], int] | None
@@ -71,6 +80,7 @@ class ModuleDefinition:
     event_subscribers: tuple[EventContract, ...] = ()
     workers: tuple[str, ...] = ()
     schedules: tuple[str, ...] = ()
+    schedule_handlers: tuple[ScheduleHandler, ...] = ()
     reference_guards: tuple[ReferenceGuardSpec, ...] = ()
     menus: tuple[str, ...] = ()
     lifecycle: LifecycleHooks = field(default_factory=LifecycleHooks)

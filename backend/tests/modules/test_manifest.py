@@ -46,6 +46,15 @@ def test_suite_edition_includes_items_module() -> None:
     assert build_manifest(edition="suite") == manifest
 
 
+def test_erp_edition_includes_only_platform_and_erp_routes() -> None:
+    manifest = build_manifest(edition="erp")
+    paths = schema_paths_for("erp")
+
+    assert [module.code for module in manifest.modules] == ["platform", "erp"]
+    assert "/api/v1/erp/products" in paths
+    assert "/api/v1/items" not in paths
+
+
 def test_manifest_digest_changes_with_module_contract_inputs(monkeypatch) -> None:
     baseline = build_manifest(edition="base")
 

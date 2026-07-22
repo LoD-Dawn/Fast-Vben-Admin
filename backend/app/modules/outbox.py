@@ -7,7 +7,7 @@ from datetime import timedelta
 from typing import Any
 
 from sqlalchemy import or_
-from sqlmodel import Session, col, select
+from sqlmodel import Session, col, func, select
 
 from app.core.clock import get_datetime_utc
 from app.modules.access import evaluate_module_access
@@ -133,6 +133,21 @@ def enqueue_event(
             )
         )
     return event
+
+
+def count_pending_events(*, session: Session, module_code: str) -> int:
+    """Return the current pending event count for one module."""
+
+    return int(
+        session.exec(
+            select(func.count())
+            .select_from(OutboxEvent)
+            .where(
+                OutboxEvent.module_code == module_code,
+                OutboxEvent.status == OutboxEventStatus.PENDING,
+            )
+        ).one()
+    )
 
 
 def dispatch_pending_events(

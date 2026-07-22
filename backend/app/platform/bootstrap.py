@@ -1,6 +1,7 @@
 from sqlmodel import Session, select
 
 from app import crud
+from app.core.cache import CacheNamespace, redis_cache
 from app.core.config import settings
 from app.core.tenancy import DEFAULT_TENANT_CODE, DEFAULT_TENANT_ID
 from app.platform.bootstrap_configuration import (
@@ -69,6 +70,10 @@ def init_db(session: Session) -> None:
     )
 
     seed_system_data(session=session, superuser=user, tenant=default_tenant)
+    # A new Edition can add menu permissions to an already initialized tenant.
+    # Subsequent logins must not receive a stale RBAC snapshot.
+    redis_cache.bump_namespace(CacheNamespace.RBAC)
+    redis_cache.bump_namespace(CacheNamespace.MODULE_ACCESS)
 
 
 def ensure_default_tenant_plan(*, session: Session) -> TenantPlan:

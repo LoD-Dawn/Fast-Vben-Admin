@@ -1,18 +1,13 @@
-import base64
 import hashlib
 import hmac
 import json
 import secrets
 
 import pyotp
-from cryptography.fernet import Fernet, InvalidToken
 
 from app.core.config import settings
-
-
-def _get_fernet() -> Fernet:
-    key_material = hashlib.sha256(settings.SECRET_KEY.encode()).digest()
-    return Fernet(base64.urlsafe_b64encode(key_material))
+from app.platform.public_api import get_sensitive_value_protector
+from app.platform.public_api.sensitive_values import SensitiveValueProtectionError
 
 
 def generate_totp_secret() -> str:
@@ -51,13 +46,13 @@ def decrypt_totp_secret(secret_encrypted: str) -> str:
 
 
 def encrypt_secret(value: str) -> str:
-    return _get_fernet().encrypt(value.encode()).decode()
+    return get_sensitive_value_protector().encrypt(value)
 
 
 def decrypt_secret(value_encrypted: str) -> str:
     try:
-        return _get_fernet().decrypt(value_encrypted.encode()).decode()
-    except InvalidToken as exc:
+        return get_sensitive_value_protector().decrypt(value_encrypted)
+    except SensitiveValueProtectionError as exc:
         raise ValueError("Invalid encrypted secret") from exc
 
 

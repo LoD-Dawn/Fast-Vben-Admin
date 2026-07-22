@@ -25,9 +25,9 @@ export async function loginAs(
 export async function completeSliderCaptcha(page: Page) {
   const bar = page.locator('.verify-bar-area:visible').last();
   await expect(bar).toBeVisible();
-  const targetImageX = await page
-    .locator('.verify-background:visible')
-    .last()
+  const background = page.locator('.verify-background:visible').last();
+  await expect(background).toHaveJSProperty('naturalWidth', 400);
+  const targetImageX = await background
     .evaluate(async (element) => {
       const image = element as HTMLImageElement;
       if (!image.complete) await image.decode();

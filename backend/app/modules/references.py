@@ -1,6 +1,6 @@
-from sqlmodel import Session
+"""Cross-module destructive-reference guards."""
 
-from app.core.config import settings
+from sqlmodel import Session
 
 
 class ReferenceGuardUnavailableError(ValueError):
@@ -11,14 +11,10 @@ def find_references(
     *, session: Session, reference_type: str, reference_id, tenant_id=None
 ) -> dict[str, int]:
     """Return reference counts, failing closed for required guards."""
-    from app.modules.manifest import build_manifest, load_manifest_file
+    from app.modules.access import get_runtime_manifest
     from app.modules.registry import get_module_definitions
 
-    manifest = (
-        load_manifest_file(settings.BUILD_MANIFEST_PATH)
-        if settings.BUILD_MANIFEST_PATH is not None
-        else build_manifest(edition=settings.APP_EDITION)
-    )
+    manifest = get_runtime_manifest()
     definitions = get_module_definitions()
     references: dict[str, int] = {}
     for module in manifest.modules:

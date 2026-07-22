@@ -15,6 +15,7 @@ from app.api.deps import (
 )
 from app.core.clock import get_datetime_utc
 from app.core.quotas import ensure_file_quota
+from app.modules.references import assert_no_references
 from app.platform.core.configuration_models import SystemSetting
 from app.platform.core.identity_models import UserPublic
 from app.platform.infra.file_models import (
@@ -541,6 +542,15 @@ def read_file(
     ).first()
     if not file_asset:
         raise HTTPException(status_code=404, detail="File not found")
+    try:
+        assert_no_references(
+            session=session,
+            reference_type="file",
+            reference_id=file_id,
+            tenant_id=tenant_context.tenant_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     if not current_user.is_superuser and file_asset.uploader_id != current_user.id:
         raise HTTPException(
             status_code=403, detail="The user doesn't have enough privileges"

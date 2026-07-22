@@ -9,7 +9,7 @@ from psycopg import sql
 from app.core.config import settings
 
 ROLE_NAME_PATTERN = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
-SCHEMAS = ("public", "items")
+SCHEMAS = ("public", "items", "erp")
 
 
 def runtime_role_credentials() -> tuple[str, str]:
@@ -24,6 +24,11 @@ def runtime_role_credentials() -> tuple[str, str]:
 
 def schema_exists(cursor: psycopg.Cursor[object], schema: str) -> bool:
     cursor.execute("SELECT to_regnamespace(%s) IS NOT NULL", (schema,))
+    return cursor.fetchone() == (True,)
+
+
+def table_exists(cursor: psycopg.Cursor[object], qualified_table: str) -> bool:
+    cursor.execute("SELECT to_regclass(%s) IS NOT NULL", (qualified_table,))
     return cursor.fetchone() == (True,)
 
 
@@ -63,6 +68,20 @@ def grant_schema_access(
     )
 
 
+def restrict_immutable_erp_table_access(
+    cursor: psycopg.Cursor[object], *, runtime_role: str
+) -> None:
+    if not schema_exists(cursor, "erp"):
+        return
+    for table in ("erp.stock_ledger", "erp.document_action_log"):
+        if table_exists(cursor, table):
+            cursor.execute(
+                sql.SQL("REVOKE UPDATE, DELETE ON {} FROM {}").format(
+                    sql.SQL(table), sql.Identifier(runtime_role)
+                )
+            )
+
+
 def provision_runtime_role() -> None:
     runtime_role, password = runtime_role_credentials()
     connection_string = str(settings.SQLALCHEMY_DATABASE_URI).replace(
@@ -98,6 +117,7 @@ def provision_runtime_role() -> None:
                     schema=schema,
                     runtime_role=runtime_role,
                 )
+            restrict_immutable_erp_table_access(cursor, runtime_role=runtime_role)
 
 
 def main() -> None:

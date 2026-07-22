@@ -3,12 +3,14 @@ from collections.abc import Iterable
 from fastapi import APIRouter
 
 from app.modules.contracts import ModuleDefinition
+from app.modules.erp.module import definition as erp_definition
 from app.modules.items.module import definition as items_definition
 from app.modules.platform import definition as platform_definition
 
 MODULE_DEFINITIONS: dict[str, ModuleDefinition] = {
     platform_definition.code: platform_definition,
     items_definition.code: items_definition,
+    erp_definition.code: erp_definition,
 }
 
 

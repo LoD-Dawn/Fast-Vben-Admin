@@ -6,6 +6,10 @@ from fastapi import Depends
 
 from app.api import deps as _deps
 from app.core.data_permissions import build_owner_data_scope_filter_for_principal
+from app.platform.infra.file_directory import SqlFileAssetDirectory
+from app.platform.public_api.files import FileAssetDirectory
+from app.platform.public_api.users import UserDirectory
+from app.platform.user_directory import SqlUserDirectory
 
 
 @dataclass(frozen=True)
@@ -42,6 +46,20 @@ CurrentTenant = Annotated[TenantContext, Depends(get_current_tenant_context)]
 SessionDep = _deps.SessionDep
 
 
+def get_file_asset_directory(session: SessionDep) -> FileAssetDirectory:
+    return SqlFileAssetDirectory(session)
+
+
+FileAssetDirectoryDep = Annotated[FileAssetDirectory, Depends(get_file_asset_directory)]
+
+
+def get_user_directory(session: SessionDep) -> UserDirectory:
+    return SqlUserDirectory(session)
+
+
+UserDirectoryDep = Annotated[UserDirectory, Depends(get_user_directory)]
+
+
 def build_owner_data_scope_filter(
     *,
     session: SessionDep,
@@ -75,6 +93,8 @@ __all__ = [
     "CurrentTenant",
     "CurrentPrincipal",
     "SessionDep",
+    "FileAssetDirectoryDep",
+    "UserDirectoryDep",
     "Principal",
     "TenantContext",
     "build_owner_data_scope_filter",

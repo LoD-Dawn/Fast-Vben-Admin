@@ -94,7 +94,59 @@ ERROR_CODE_BY_MESSAGE = {
     "Tenant module is disabled": "TENANT_MODULE_DISABLED",
     "Platform module cannot be disabled": "PLATFORM_MODULE_REQUIRED",
     "Platform module entitlement cannot be managed": "PLATFORM_MODULE_REQUIRED",
+    "ERP resource code already exists": "ERP_RESOURCE_CODE_CONFLICT",
+    "Product unit is in use": "ERP_RESOURCE_IN_USE",
+    "Product category is in use": "ERP_RESOURCE_IN_USE",
+    "Product category cannot be its own parent": "ERP_CATEGORY_CYCLE",
+    "Product category hierarchy is cyclic": "ERP_CATEGORY_CYCLE",
+    "Inventory document requires at least one line": "ERP_DOCUMENT_LINES_REQUIRED",
+    "Inventory effect cannot be zero": "ERP_DOCUMENT_LINES_REQUIRED",
+    "Stock is insufficient": "ERP_STOCK_INSUFFICIENT",
+    "Product is unavailable": "ERP_MASTER_DATA_UNAVAILABLE",
+    "Warehouse is unavailable": "ERP_MASTER_DATA_UNAVAILABLE",
+    "Stock document version conflict": "ERP_DOCUMENT_VERSION_CONFLICT",
+    "Stock document has no reversible posting": "ERP_DOCUMENT_STATE_CONFLICT",
+    "Stock snapshot is stale": "ERP_STOCK_SNAPSHOT_STALE",
 }
+
+
+def resolve_error_code(*, status_code: int, detail: str, path: str) -> str:
+    """Keep ERP business failures distinguishable without changing legacy APIs."""
+
+    mapped = ERROR_CODE_BY_MESSAGE.get(detail)
+    if mapped is not None:
+        return mapped
+    if "/erp" not in path:
+        return ERROR_CODE_BY_STATUS.get(status_code, "REQUEST_ERROR")
+    if "Idempotency" in detail or "Idempotency-Key" in detail:
+        return "ERP_IDEMPOTENCY_CONFLICT"
+    if detail.endswith(" not found"):
+        return "ERP_RESOURCE_NOT_FOUND"
+    if " is inactive" in detail:
+        return "ERP_MASTER_DATA_INACTIVE"
+    if " is unavailable" in detail:
+        return "ERP_MASTER_DATA_UNAVAILABLE"
+    if "version conflict" in detail:
+        return "ERP_DOCUMENT_VERSION_CONFLICT"
+    if "exceeds" in detail:
+        return (
+            "ERP_SETTLEMENT_LIMIT_EXCEEDED"
+            if "Settlement" in detail or "settlement" in detail
+            else "ERP_QUANTITY_EXCEEDED"
+        )
+    if any(
+        phrase in detail
+        for phrase in (
+            "must be approved",
+            "must be draft",
+            "downstream",
+            "no reversible posting",
+            "cannot be changed after document approval",
+            "cannot repeat",
+        )
+    ):
+        return "ERP_DOCUMENT_STATE_CONFLICT"
+    return ERROR_CODE_BY_STATUS.get(status_code, "REQUEST_ERROR")
 
 
 def error_response(
@@ -140,8 +192,8 @@ async def http_exception_handler(_request: Request, exc: HTTPException) -> JSONR
     detail = exc.detail if isinstance(exc.detail, str) else "Request failed"
     return error_response(
         status_code=exc.status_code,
-        code=ERROR_CODE_BY_MESSAGE.get(
-            detail, ERROR_CODE_BY_STATUS.get(exc.status_code, "REQUEST_ERROR")
+        code=resolve_error_code(
+            status_code=exc.status_code, detail=detail, path=_request.url.path
         ),
         message=detail,
         details={} if isinstance(exc.detail, str) else {"detail": exc.detail},

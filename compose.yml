@@ -120,6 +120,28 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       APP_EDITION: ${APP_EDITION:-suite}
 
+  schedule-worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        BUILD_MANIFEST: artifacts/${APP_EDITION:-suite}/build-manifest.json
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      prestart:
+        condition: service_completed_successfully
+    command: python -m app.modules.schedule_worker
+    env_file:
+      - .env
+    environment:
+      POSTGRES_SERVER: db
+      POSTGRES_USER: ${APP_RUNTIME_DB_USER?Variable not set}
+      POSTGRES_PASSWORD: ${APP_RUNTIME_DB_PASSWORD?Variable not set}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      APP_EDITION: ${APP_EDITION:-suite}
+
   frontend:
     build:
       context: .

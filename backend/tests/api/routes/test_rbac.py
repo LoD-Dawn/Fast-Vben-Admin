@@ -94,6 +94,34 @@ def test_basic_settings_menu_hierarchy(db: Session) -> None:
     assert messages.parent_id == message_center.id
 
 
+def test_erp_menu_hierarchy_matches_the_product_navigation(db: Session) -> None:
+    menus = {
+        menu.route_path: menu
+        for menu in db.exec(select(Menu)).all()
+        if menu.route_path is not None
+    }
+
+    erp = menus["/erp"]
+    assert erp.title == "ERP 系统"
+    assert {menus[path].title for path in (
+        "/erp/home",
+        "/erp/purchase",
+        "/erp/sale",
+        "/erp/stock",
+        "/erp/product",
+        "/erp/finance",
+    )} == {"首页", "采购管理", "销售管理", "产品库存管理", "产品管理", "财务管理"}
+
+    for path in ("/erp/home", "/erp/purchase", "/erp/sale", "/erp/stock", "/erp/product", "/erp/finance"):
+        assert menus[path].parent_id == erp.id
+
+    assert menus["/erp/purchase/suppliers"].parent_id == menus["/erp/purchase"].id
+    assert menus["/erp/sale/customers"].parent_id == menus["/erp/sale"].id
+    assert menus["/erp/stock/balances"].parent_id == menus["/erp/stock"].id
+    assert menus["/erp/product/products"].parent_id == menus["/erp/product"].id
+    assert menus["/erp/finance/accounts"].parent_id == menus["/erp/finance"].id
+
+
 def test_superuser_can_read_seeded_menus(
     client: TestClient, superuser_token_headers: dict[str, str]
 ) -> None:
