@@ -1,6 +1,7 @@
 <script lang="ts" setup>
+import type { FormInstance, FormProps } from 'ant-design-vue';
+
 import type { VxeTableGridOptions } from '#/adapter/vxe-table';
-import type { FormInstance } from 'ant-design-vue';
 import type { CounterpartyRecord } from '#/modules/erp/api/erp';
 
 import { computed, reactive, ref, watch } from 'vue';
@@ -8,6 +9,7 @@ import { useRoute } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 import { Plus } from '@vben/icons';
+
 import {
   Button,
   Drawer,
@@ -20,13 +22,13 @@ import {
 } from 'ant-design-vue';
 
 import { useVbenVxeGrid, VbenTableAction } from '#/adapter/vxe-table';
-import ExportCsvButton from '#/modules/erp/components/export-csv-button.vue';
 import {
   createCounterpartyApi,
   deleteCounterpartyApi,
   listCounterpartiesApi,
   updateCounterpartyApi,
 } from '#/modules/erp/api/erp';
+import ExportCsvButton from '#/modules/erp/components/export-csv-button.vue';
 import { buildKeyword } from '#/views/system/shared/utils';
 
 type CounterpartyKind = 'customer' | 'supplier';
@@ -68,6 +70,43 @@ const labels: Record<CounterpartyKind, string> = {
 const permissionPrefix: Record<CounterpartyKind, string> = {
   customer: 'erp:customer',
   supplier: 'erp:supplier',
+};
+const formRules: FormProps['rules'] = {
+  address: [{ max: 500, message: '地址不能超过 500 个字符' }],
+  bank_account: [{ max: 500, message: '银行账号不能超过 500 个字符' }],
+  bank_name: [{ max: 200, message: '开户行不能超过 200 个字符' }],
+  contact_name: [{ max: 100, message: '联系人不能超过 100 个字符' }],
+  email: [
+    { max: 320, message: '电子邮箱不能超过 320 个字符' },
+    { message: '请输入有效的电子邮箱', type: 'email' },
+  ],
+  fax: [{ max: 50, message: '传真号码不能超过 50 个字符' }],
+  mobile: [{ max: 50, message: '手机号码不能超过 50 个字符' }],
+  name: [
+    { message: '请输入名称', required: true },
+    { message: '名称不能只包含空格', whitespace: true },
+    { max: 200, message: '名称不能超过 200 个字符' },
+  ],
+  phone: [{ max: 50, message: '联系电话不能超过 50 个字符' }],
+  remark: [{ max: 500, message: '备注不能超过 500 个字符' }],
+  sort: [
+    {
+      message: '请输入不小于 0 的整数',
+      min: 0,
+      required: true,
+      type: 'integer',
+    },
+  ],
+  tax_no: [{ max: 100, message: '税号不能超过 100 个字符' }],
+  tax_rate: [
+    {
+      max: 100,
+      message: '请输入 0 至 100 的税率',
+      min: 0,
+      required: true,
+      type: 'number',
+    },
+  ],
 };
 
 const [Grid, gridApi] = useVbenVxeGrid({
@@ -186,16 +225,17 @@ async function submit() {
   try {
     const payload = {
       ...form,
-      address: form.address || null,
+      address: form.address?.trim() || null,
       bank_account: form.bank_account?.trim() || undefined,
-      bank_name: form.bank_name || null,
-      contact_name: form.contact_name || null,
-      email: form.email || null,
-      fax: form.fax || null,
-      mobile: form.mobile || null,
-      phone: form.phone || null,
-      remark: form.remark || null,
-      tax_no: form.tax_no || null,
+      bank_name: form.bank_name?.trim() || null,
+      contact_name: form.contact_name?.trim() || null,
+      email: form.email?.trim() || null,
+      fax: form.fax?.trim() || null,
+      mobile: form.mobile?.trim() || null,
+      name: form.name.trim(),
+      phone: form.phone?.trim() || null,
+      remark: form.remark?.trim() || null,
+      tax_no: form.tax_no?.trim() || null,
       tax_rate: String(form.tax_rate),
     };
     if (editingId.value)
@@ -237,72 +277,126 @@ watch(
       placement="right"
       @close="resetForm"
     >
-      <Form ref="formRef" class="mx-3" :model="form" layout="vertical">
+      <Form
+        ref="formRef"
+        autocomplete="off"
+        class="mx-3"
+        :model="form"
+        :rules="formRules"
+        layout="vertical"
+      >
         <div class="grid grid-cols-1 gap-x-4 md:grid-cols-2">
-          <Form.Item
-            label="名称"
-            name="name"
-            :rules="[{ required: true, message: '请输入名称' }]"
-            ><Input v-model:value="form.name" :maxlength="200"
-          /></Form.Item>
-          <Form.Item label="联系人"
-            ><Input v-model:value="form.contact_name" :maxlength="100"
-          /></Form.Item>
-          <Form.Item label="手机"
-            ><Input v-model:value="form.mobile" :maxlength="50"
-          /></Form.Item>
-          <Form.Item label="电话"
-            ><Input v-model:value="form.phone" :maxlength="50"
-          /></Form.Item>
-          <Form.Item label="邮箱"
-            ><Input v-model:value="form.email" :maxlength="320"
-          /></Form.Item>
-          <Form.Item label="传真"
-            ><Input v-model:value="form.fax" :maxlength="50"
-          /></Form.Item>
-          <Form.Item label="税率 (%)"
-            ><InputNumber
+          <Form.Item label="名称" name="name">
+<Input
+              v-model:value="form.name"
+              :maxlength="200"
+              :placeholder="`请输入${labels[kind]}名称`"
+          />
+</Form.Item>
+          <Form.Item label="联系人" name="contact_name">
+<Input
+              v-model:value="form.contact_name"
+              :maxlength="100"
+              placeholder="请输入联系人"
+          />
+</Form.Item>
+          <Form.Item label="手机" name="mobile">
+<Input
+              v-model:value="form.mobile"
+              :maxlength="50"
+              placeholder="请输入手机号码"
+          />
+</Form.Item>
+          <Form.Item label="电话" name="phone">
+<Input
+              v-model:value="form.phone"
+              :maxlength="50"
+              placeholder="请输入联系电话"
+          />
+</Form.Item>
+          <Form.Item label="邮箱" name="email">
+<Input
+              v-model:value="form.email"
+              :maxlength="320"
+              placeholder="请输入电子邮箱"
+          />
+</Form.Item>
+          <Form.Item label="传真" name="fax">
+<Input
+              v-model:value="form.fax"
+              :maxlength="50"
+              placeholder="请输入传真号码"
+          />
+</Form.Item>
+          <Form.Item label="税率 (%)" name="tax_rate">
+<InputNumber
               v-model:value="form.tax_rate"
               :max="100"
               :min="0"
               :precision="4"
               class="w-full"
-          /></Form.Item>
-          <Form.Item label="税号"
-            ><Input v-model:value="form.tax_no" :maxlength="100"
-          /></Form.Item>
-          <Form.Item label="开户行"
-            ><Input v-model:value="form.bank_name" :maxlength="200"
-          /></Form.Item>
-          <Form.Item label="银行账号"
-            ><Input
+              placeholder="请输入税率"
+          />
+</Form.Item>
+          <Form.Item label="税号" name="tax_no">
+<Input
+              v-model:value="form.tax_no"
+              :maxlength="100"
+              placeholder="请输入税号"
+          />
+</Form.Item>
+          <Form.Item label="开户行" name="bank_name">
+<Input
+              v-model:value="form.bank_name"
+              :maxlength="200"
+              autocomplete="off"
+              placeholder="请输入开户行"
+          />
+</Form.Item>
+          <Form.Item label="银行账号" name="bank_account">
+<Input
               v-model:value="form.bank_account"
               :maxlength="500"
-              autocomplete="off"
+              :placeholder="editingId ? '不修改请留空' : '请输入银行账号'"
+              autocomplete="new-password"
               type="password"
-          /></Form.Item>
-          <Form.Item label="排序"
-            ><InputNumber v-model:value="form.sort" :min="0" class="w-full"
-          /></Form.Item>
-          <Form.Item label="状态"
-            ><Switch
+          />
+</Form.Item>
+          <Form.Item label="排序" name="sort">
+<InputNumber
+              v-model:value="form.sort"
+              :min="0"
+              :precision="0"
+              class="w-full"
+              placeholder="请输入排序值"
+          />
+</Form.Item>
+          <Form.Item label="状态" name="is_active">
+<Switch
               v-model:checked="form.is_active"
               checked-children="启用"
               un-checked-children="停用"
-          /></Form.Item>
+          />
+</Form.Item>
         </div>
-        <Form.Item label="地址"
-          ><Input.TextArea
+        <Form.Item label="地址" name="address">
+<Input.TextArea
             v-model:value="form.address"
             :maxlength="500"
+            placeholder="请输入地址"
             :rows="2"
-        /></Form.Item>
-        <Form.Item label="备注"
-          ><Input.TextArea
+            show-count
+        />
+</Form.Item>
+        <Form.Item label="备注" name="remark">
+<Input.TextArea
             v-model:value="form.remark"
             :maxlength="500"
+            placeholder="请输入备注"
             :rows="2"
-        /></Form.Item>
+            show-count
+        />
+</Form.Item>
       </Form>
       <template #footer>
         <div class="flex justify-end gap-2">

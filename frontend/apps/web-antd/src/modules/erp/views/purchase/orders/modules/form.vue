@@ -1,6 +1,7 @@
 <script lang="ts" setup>
-import type { PurchaseOrderRecord } from '#/modules/erp/api/erp';
 import type { PurchaseOrderLineForm } from '../data';
+
+import type { PurchaseOrderRecord } from '#/modules/erp/api/erp';
 
 import { computed, ref } from 'vue';
 
@@ -11,7 +12,6 @@ import { Button, message, Tag } from 'ant-design-vue';
 
 import { useVbenForm } from '#/adapter/form';
 import { uploadFileApi } from '#/api';
-import DocumentAttachments from '#/modules/erp/components/document-attachments.vue';
 import {
   createDocumentAttachmentApi,
   createPurchaseOrderApi,
@@ -19,6 +19,7 @@ import {
   listSettlementAccountsApi,
   updatePurchaseOrderApi,
 } from '#/modules/erp/api/erp';
+import DocumentAttachments from '#/modules/erp/components/document-attachments.vue';
 
 import { useOrderFormSchema } from '../data';
 import PurchaseOrderItemForm from './item-form.vue';
@@ -92,6 +93,12 @@ function nowForForm() {
   return new Date(now.getTime() - now.getTimezoneOffset() * 60_000)
     .toISOString()
     .slice(0, 19);
+}
+
+function normalizeBusinessAt(value: unknown) {
+  if (!value) return undefined;
+  const date = new Date(String(value));
+  return Number.isNaN(date.getTime()) ? String(value) : date.toISOString();
 }
 
 function chooseAttachments() {
@@ -185,7 +192,7 @@ const [Drawer, drawerApi] = useVbenDrawer({
     drawerApi.lock();
     try {
       const payload = {
-        business_at: values.business_at || undefined,
+        business_at: normalizeBusinessAt(values.business_at),
         deposit_amount: String(values.deposit_amount ?? 0),
         discount_rate: String(values.discount_rate ?? 0),
         items: orderLines.value.map((item) => ({
@@ -231,7 +238,9 @@ const [Drawer, drawerApi] = useVbenDrawer({
     pendingAttachments.value = [];
     discountRate.value = 0;
     await formApi.resetForm();
-    formApi.setDisabled(formType.value === 'detail');
+    formApi.setState({
+      commonConfig: { disabled: formType.value === 'detail' },
+    });
     await formApi.updateSchema(useOrderFormSchema(formType.value));
 
     if (!drawerData?.orderId) {

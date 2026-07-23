@@ -79,12 +79,12 @@ const [Grid, gridApi] = useVbenVxeGrid({
     schema: [
       {
         component: 'Input',
-        componentProps: { placeholder: '按编码、名称或条码检索' },
+        componentProps: { placeholder: '请输入商品名称/编码/条码' },
         fieldName: 'keyword',
-        label: '检索',
+        label: '商品检索',
       },
     ],
-    submitOnChange: true,
+    showCollapseButton: true,
   },
   gridOptions: {
     columns: [
@@ -333,7 +333,7 @@ async function removeProduct(row: ProductRecord) {
       </template>
     </Drawer>
 
-    <Grid table-title="商品主数据">
+    <Grid table-title="商品列表">
       <template #toolbar-tools>
         <div class="flex items-center gap-1">
           <Button

@@ -1,5 +1,6 @@
-import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
+
+import { expect, test } from '@playwright/test';
 
 import {
   apiBaseURL,
@@ -89,11 +90,84 @@ test('admin can open ERP P0 workspaces', async ({ page }) => {
   }
 });
 
+test('admin can create, update, search, and delete a supplier', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await loginAsAdmin(page);
+  const suffix = uniqueName('supplier-crud');
+  const supplierName = `Supplier ${suffix}`;
+  const updatedContact = `Contact ${suffix}`;
+
+  await page.goto('/erp/purchase/suppliers');
+  await page.getByRole('button', { name: '新增供应商' }).click();
+
+  const drawer = page.locator('.ant-drawer:visible');
+  await expect(drawer.getByText('新增供应商', { exact: true })).toBeVisible();
+  const nameInput = drawer.getByPlaceholder('请输入供应商名称');
+  const emailInput = drawer.getByPlaceholder('请输入电子邮箱');
+  await expect(drawer.getByPlaceholder('请输入联系人')).toBeVisible();
+  await expect(drawer.getByPlaceholder('请输入手机号码')).toBeVisible();
+  await expect(drawer.getByPlaceholder('请输入联系电话')).toBeVisible();
+  await expect(drawer.getByPlaceholder('请输入传真号码')).toBeVisible();
+  await expect(drawer.getByPlaceholder('请输入税率')).toBeVisible();
+  await expect(drawer.getByPlaceholder('请输入税号')).toBeVisible();
+  await expect(drawer.getByPlaceholder('请输入开户行')).toBeVisible();
+  await expect(drawer.getByPlaceholder('请输入银行账号')).toBeVisible();
+  await expect(drawer.getByPlaceholder('请输入排序值')).toBeVisible();
+  await expect(drawer.getByPlaceholder('请输入地址')).toBeVisible();
+  await expect(drawer.getByPlaceholder('请输入备注')).toBeVisible();
+
+  const saveButton = drawer.getByRole('button', { name: /^保\s*存$/ });
+  await saveButton.click();
+  await expect(drawer.getByText('请输入名称', { exact: true })).toBeVisible();
+  await nameInput.fill(supplierName);
+  await emailInput.fill('invalid-email');
+  await saveButton.click();
+  await expect(
+    drawer.getByText('请输入有效的电子邮箱', { exact: true }),
+  ).toBeVisible();
+  await emailInput.fill(`supplier-${suffix}@example.com`);
+
+  const contactInput = drawer.getByPlaceholder('请输入联系人');
+  await contactInput.fill('Initial contact');
+  await saveButton.click();
+  await expect(drawer.getByText('新增供应商', { exact: true })).toBeHidden();
+
+  const nameSearch = page.getByPlaceholder('请输入供应商名称');
+  await nameSearch.fill(supplierName);
+  await page.getByRole('button', { name: /^搜\s*索$/ }).click();
+
+  const supplierRow = page
+    .getByText(supplierName, { exact: true })
+    .locator('xpath=ancestor::tr');
+  await expect(supplierRow).toBeVisible();
+  const supplierRowId = await supplierRow.getAttribute('rowid');
+  expect(supplierRowId).toBeTruthy();
+  const operationRow = page
+    .locator(`tr[rowid="${supplierRowId}"]`)
+    .filter({ has: page.getByRole('button', { name: '编辑' }) });
+
+  await operationRow.getByRole('button', { name: '编辑' }).click();
+  await expect(drawer.getByText('编辑供应商', { exact: true })).toBeVisible();
+  await expect(drawer.getByLabel('名称')).toHaveValue(supplierName);
+  await contactInput.fill(updatedContact);
+  await drawer.getByRole('button', { name: /^保\s*存$/ }).click();
+  await expect(drawer.getByText('编辑供应商', { exact: true })).toBeHidden();
+  await expect(supplierRow.getByText(updatedContact, { exact: true })).toBeVisible();
+
+  await operationRow.getByRole('button', { name: '删除' }).click();
+  const confirmation = page.getByRole('dialog', { name: '删除' });
+  await expect(confirmation).toContainText(`确认删除供应商 ${supplierName} 吗？`);
+  await confirmation.getByRole('button', { name: '确认' }).click();
+  await expect(page.getByText(supplierName, { exact: true })).toHaveCount(0);
+});
+
 test('admin can create and approve a purchase order from the ERP workspace', async ({
   page,
   request,
 }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(120_000);
   await loginAsAdmin(page);
   const token = await page.evaluate(() => {
     for (let index = 0; index < localStorage.length; index += 1) {
@@ -144,12 +218,10 @@ test('admin can create and approve a purchase order from the ERP workspace', asy
   await page.goto('/erp/purchase/orders');
   await page.getByRole('button', { name: '新增采购订单' }).click();
 
-  const drawer = page.locator('.ant-drawer:visible');
-  await expect(drawer.getByText('新建采购订单', { exact: true })).toBeVisible();
+  const drawer = page.getByRole('dialog');
+  await expect(drawer.getByText('新增采购订单', { exact: true })).toBeVisible();
   await drawer
-    .getByText('供应商', { exact: true })
-    .locator('xpath=..')
-    .locator('.ant-select')
+    .getByRole('combobox', { name: '* 供应商', exact: true })
     .click();
   await page
     .locator('.ant-select-dropdown:visible')
@@ -159,23 +231,45 @@ test('admin can create and approve a purchase order from the ERP workspace', asy
   await drawer.locator('tbody .ant-select').click();
   await page
     .locator('.ant-select-dropdown:visible')
-    .getByText(`${productName} (product-${suffix})`, { exact: true })
+    .getByText(productName, { exact: true })
     .click();
   const lineInputs = drawer.locator('tbody .ant-input-number-input');
   await lineInputs.nth(0).fill('100');
   await lineInputs.nth(1).fill('12.5');
-  await drawer.getByRole('button', { name: '保存草稿' }).click();
-  await expect(page.locator('.ant-drawer-open')).toHaveCount(0);
+  await drawer.getByRole('button', { name: /^确\s*认$/ }).click();
+  await expect(drawer).toHaveCount(0);
 
   const orderRow = page
     .getByText(supplierName, { exact: true })
     .locator('xpath=ancestor::tr');
   await expect(orderRow).toBeVisible();
-  await orderRow.getByRole('button', { name: '审核' }).click();
-  const confirmation = page.locator('.ant-popconfirm:visible');
-  await expect(confirmation).toContainText('审核后可用于采购入库');
-  await confirmation.getByRole('button', { name: /^确\s*定$/ }).click();
-  await expect(orderRow.getByText('已审核', { exact: true })).toBeVisible();
+  const orderRowId = await orderRow.getAttribute('rowid');
+  expect(orderRowId).toBeTruthy();
+  const operationRow = page
+    .locator(`tr[rowid="${orderRowId}"]`)
+    .filter({ has: page.getByRole('button', { name: '详情' }) });
+
+  await operationRow.getByRole('button', { name: '编辑' }).click();
+  await expect(drawer.getByText('编辑采购订单', { exact: true })).toBeVisible();
+  await expect(drawer.getByText(productName, { exact: true })).toBeVisible();
+  await drawer.getByPlaceholder('请输入备注').fill(`Edited ${suffix}`);
+  await drawer.getByRole('button', { name: /^确\s*认$/ }).click();
+  await expect(drawer).toHaveCount(0);
+
+  await operationRow.getByRole('button', { name: '详情' }).click();
+  await expect(drawer.getByText('采购订单详情', { exact: true })).toBeVisible();
+  await expect(drawer.getByText(productName, { exact: true })).toBeVisible();
+  const detailRemark = drawer.getByPlaceholder('请输入备注');
+  await expect(detailRemark).toHaveValue(`Edited ${suffix}`);
+  await expect(detailRemark).toBeDisabled();
+  await drawer.getByRole('button', { name: /^取\s*消$/ }).click();
+  await expect(drawer).toHaveCount(0);
+
+  await operationRow.getByRole('button', { name: '审批' }).click();
+  const confirmation = page.getByRole('dialog', { name: '审批' });
+  await expect(confirmation).toContainText('确认审批该订单吗？');
+  await confirmation.getByRole('button', { name: '确认' }).click();
+  await expect(orderRow.getByText('已审批', { exact: true })).toBeVisible();
 });
 
 test('admin can draft the P2P receipt, return, and payment workspaces', async ({
@@ -350,7 +444,10 @@ test('admin can draft the P2P receipt, return, and payment workspaces', async ({
   await paymentDrawer.getByRole('button', { name: '保存草稿' }).click();
   const paymentResponse = await paymentCreated;
   expect(paymentResponse.ok(), await paymentResponse.text()).toBeTruthy();
-  const payment = (await paymentResponse.json()) as { version: number; id: string };
+  const payment = (await paymentResponse.json()) as {
+    id: string;
+    version: number;
+  };
   await expect(page.locator('.ant-drawer-open')).toHaveCount(0);
   const approvedPayment = await post(`/finance-payments/${payment.id}/approve`, {
     expected_version: payment.version,

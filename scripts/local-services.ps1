@@ -309,6 +309,7 @@ try {
   $processes += Start-ManagedProcess "schedule-worker" $python @(
     "-m", "app.modules.schedule_worker"
   ) $backend
+  $env:VITE_GLOB_API_URL = "http://127.0.0.1:8001/api/v1"
   $processes += Start-ManagedProcess "frontend" $pnpm @(
     "--dir", $frontend, "-F", "@vben/web-antd", "run", "dev"
   ) $root

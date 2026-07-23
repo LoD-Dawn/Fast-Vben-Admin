@@ -1,25 +1,21 @@
 <script lang="ts" setup>
 import type { VxeTableGridOptions } from '#/adapter/vxe-table';
 import type {
-  ProductCategoryRecord,
   ProductRecord,
   StockBalanceRecord,
   StockLedgerRecord,
   StockQuery,
-  WarehouseRecord,
 } from '#/modules/erp/api/erp';
 
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
-import { Download, RotateCw, Search } from '@vben/icons';
-
-import { Button, Input, Select, Segmented } from 'ant-design-vue';
+import { Download } from '@vben/icons';
+import { Button, Segmented } from 'ant-design-vue';
 
 import { useVbenVxeGrid, VbenTableAction } from '#/adapter/vxe-table';
 import { downloadApi } from '#/api';
-import ErpRemoteSelect from '#/modules/erp/components/erp-remote-select.vue';
 import LedgerSourceDocument from '#/modules/erp/components/ledger-source-document.vue';
 import {
   listProductCategoriesApi,
@@ -41,24 +37,6 @@ const view = ref<'balance' | 'ledger'>(viewForPath(route.path));
 const isDedicatedPage = computed(
   () => route.path === '/erp/stock/balances' || route.path === '/erp/stock/ledger',
 );
-const products = ref<ProductRecord[]>([]);
-const categories = ref<ProductCategoryRecord[]>([]);
-const warehouses = ref<WarehouseRecord[]>([]);
-
-const balanceFilters = reactive({
-  category_id: undefined as string | undefined,
-  product_id: undefined as string | undefined,
-  warehouse_id: undefined as string | undefined,
-});
-const ledgerFilters = reactive({
-  category_id: undefined as string | undefined,
-  ledger_type: undefined as string | undefined,
-  occurred_from: undefined as string | undefined,
-  occurred_to: undefined as string | undefined,
-  product_id: undefined as string | undefined,
-  source_document_no: undefined as string | undefined,
-  warehouse_id: undefined as string | undefined,
-});
 
 const ledgerTypeOptions = [
   { label: '采购入库', value: 'purchase_in' },
@@ -83,26 +61,26 @@ const ledgerTypeOptions = [
   { label: '盘亏冲销', value: 'check_loss_reversal' },
 ];
 
-function toUtc(value: string | undefined) {
-  return value ? new Date(value).toISOString() : undefined;
+async function loadProducts() {
+  const result = await listProductsApi({ page: 1, page_size: 100 });
+  return result.items;
 }
 
-function balanceQuery(): StockQuery {
-  return { ...balanceFilters };
+async function loadCategories() {
+  const result = await listProductCategoriesApi({ page: 1, page_size: 100 });
+  return result.items;
 }
 
-function ledgerQuery(): StockQuery {
-  return {
-    ...ledgerFilters,
-    occurred_from: toUtc(ledgerFilters.occurred_from),
-    occurred_to: toUtc(ledgerFilters.occurred_to),
-  };
+async function loadWarehouses() {
+  const result = await listWarehousesApi({ page: 1, page_size: 100 });
+  return result.items;
 }
+
+const currentQuery = ref<StockQuery>({});
 
 async function exportCurrentView() {
-  const params = view.value === 'balance' ? balanceQuery() : ledgerQuery();
   const query = new URLSearchParams(
-    Object.entries(params)
+    Object.entries(currentQuery.value)
       .filter(
         ([, value]) => value !== undefined && value !== null && value !== '',
       )
@@ -117,6 +95,53 @@ async function exportCurrentView() {
 }
 
 const [BalanceGrid, balanceGridApi] = useVbenVxeGrid({
+  formOptions: {
+    schema: [
+      {
+        component: 'ApiSelect',
+        componentProps: {
+          allowClear: true,
+          api: loadProducts,
+          class: 'w-full',
+          labelFn: (p: ProductRecord) => `${p.code} - ${p.name}`,
+          placeholder: '请选择商品',
+          showSearch: true,
+          valueField: 'id',
+        },
+        fieldName: 'product_id',
+        label: '商品',
+      },
+      {
+        component: 'ApiSelect',
+        componentProps: {
+          allowClear: true,
+          api: loadCategories,
+          class: 'w-full',
+          labelField: 'name',
+          placeholder: '请选择商品分类',
+          showSearch: true,
+          valueField: 'id',
+        },
+        fieldName: 'category_id',
+        label: '商品分类',
+      },
+      {
+        component: 'ApiSelect',
+        componentProps: {
+          allowClear: true,
+          api: loadWarehouses,
+          class: 'w-full',
+          labelField: 'name',
+          placeholder: '请选择仓库',
+          showSearch: true,
+          valueField: 'id',
+        },
+        fieldName: 'warehouse_id',
+        label: '仓库',
+      },
+    ],
+    showCollapseButton: true,
+  },
   gridOptions: {
     columns: [
       { field: 'product_code', minWidth: 140, title: '商品编码' },
@@ -130,20 +155,85 @@ const [BalanceGrid, balanceGridApi] = useVbenVxeGrid({
     height: 'auto',
     proxyConfig: {
       ajax: {
-        query: async ({ page }) =>
-          await listStockBalancesApi({
-            ...balanceQuery(),
+        query: async ({ page }, formValues) => {
+          currentQuery.value = formValues;
+          return await listStockBalancesApi({
+            ...formValues,
             page: page.currentPage,
             page_size: page.pageSize,
-          }),
+          });
+        },
       },
     },
     rowConfig: { keyField: 'id' },
-    toolbarConfig: { custom: true, refresh: true, zoom: true },
+    toolbarConfig: { custom: true, refresh: true, search: true, zoom: true },
   } as VxeTableGridOptions<StockBalanceRecord>,
 });
 
 const [LedgerGrid, ledgerGridApi] = useVbenVxeGrid({
+  formOptions: {
+    schema: [
+      {
+        component: 'ApiSelect',
+        componentProps: {
+          allowClear: true,
+          api: loadProducts,
+          class: 'w-full',
+          labelFn: (p: ProductRecord) => `${p.code} - ${p.name}`,
+          placeholder: '请选择商品',
+          showSearch: true,
+          valueField: 'id',
+        },
+        fieldName: 'product_id',
+        label: '商品',
+      },
+      {
+        component: 'ApiSelect',
+        componentProps: {
+          allowClear: true,
+          api: loadCategories,
+          class: 'w-full',
+          labelField: 'name',
+          placeholder: '请选择商品分类',
+          showSearch: true,
+          valueField: 'id',
+        },
+        fieldName: 'category_id',
+        label: '商品分类',
+      },
+      {
+        component: 'ApiSelect',
+        componentProps: {
+          allowClear: true,
+          api: loadWarehouses,
+          class: 'w-full',
+          labelField: 'name',
+          placeholder: '请选择仓库',
+          showSearch: true,
+          valueField: 'id',
+        },
+        fieldName: 'warehouse_id',
+        label: '仓库',
+      },
+      {
+        component: 'Select',
+        componentProps: {
+          allowClear: true,
+          options: ledgerTypeOptions,
+          placeholder: '请选择业务类型',
+        },
+        fieldName: 'ledger_type',
+        label: '业务类型',
+      },
+      {
+        component: 'Input',
+        componentProps: { allowClear: true, placeholder: '请输入来源单号' },
+        fieldName: 'source_document_no',
+        label: '来源单号',
+      },
+    ],
+    showCollapseButton: true,
+  },
   gridOptions: {
     columns: [
       { field: 'occurred_at', title: '发生时间', width: 180 },
@@ -159,16 +249,18 @@ const [LedgerGrid, ledgerGridApi] = useVbenVxeGrid({
     height: 'auto',
     proxyConfig: {
       ajax: {
-        query: async ({ page }) =>
-          await listStockRecordsApi({
-            ...ledgerQuery(),
+        query: async ({ page }, formValues) => {
+          currentQuery.value = formValues;
+          return await listStockRecordsApi({
+            ...formValues,
             page: page.currentPage,
             page_size: page.pageSize,
-          }),
+          });
+        },
       },
     },
     rowConfig: { keyField: 'id' },
-    toolbarConfig: { custom: true, refresh: true, zoom: true },
+    toolbarConfig: { custom: true, refresh: true, search: true, zoom: true },
   } as VxeTableGridOptions<StockLedgerRecord>,
 });
 
@@ -185,195 +277,46 @@ watch(
   },
 );
 
-function openLedger(balance: StockBalanceRecord) {
-  Object.assign(ledgerFilters, {
-    category_id: undefined,
-    ledger_type: undefined,
-    occurred_from: undefined,
-    occurred_to: undefined,
+async function openLedger(balance: StockBalanceRecord) {
+  view.value = 'ledger';
+  await ledgerGridApi.formApi.setValues({
     product_id: balance.product_id,
-    source_document_no: undefined,
     warehouse_id: balance.warehouse_id,
   });
-  view.value = 'ledger';
   ledgerGridApi.query();
-}
-
-function resetFilters() {
-  if (view.value === 'balance') {
-    Object.assign(balanceFilters, {
-      category_id: undefined,
-      product_id: undefined,
-      warehouse_id: undefined,
-    });
-  } else {
-    Object.assign(ledgerFilters, {
-      category_id: undefined,
-      ledger_type: undefined,
-      occurred_from: undefined,
-      occurred_to: undefined,
-      product_id: undefined,
-      source_document_no: undefined,
-      warehouse_id: undefined,
-    });
-  }
-  queryCurrentView();
-}
-
-function formatProduct(product: ProductRecord) { return { label: `${product.code} - ${product.name}`, value: product.id }; }
-function formatCategory(category: ProductCategoryRecord) { return { label: category.name, value: category.id }; }
-function formatWarehouse(warehouse: WarehouseRecord) { return { label: warehouse.name, value: warehouse.id }; }
-async function loadProducts(keyword: string) {
-  const result = await listProductsApi({ keyword, page: 1, page_size: 50 });
-  products.value = result.items;
-  return products.value;
-}
-async function loadCategories(keyword: string) {
-  const result = await listProductCategoriesApi({ keyword, page: 1, page_size: 50 });
-  categories.value = result.items;
-  return categories.value;
-}
-async function loadWarehouses(keyword: string) {
-  const result = await listWarehousesApi({ keyword, page: 1, page_size: 50 });
-  warehouses.value = result.items;
-  return warehouses.value;
 }
 </script>
 
 <template>
   <Page auto-content-height>
     <div
-      class="mb-3 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--vben-border-color)] pb-3"
+      v-if="!isDedicatedPage"
+      class="mb-3 flex items-center justify-between"
     >
-      <div>
-        <div class="text-base font-semibold">{{ view === 'balance' ? '产品库存' : '出入库明细' }}</div>
-        <div class="mt-1 text-sm text-[var(--vben-text-color-2)]">
-          余额与不可变流水
+      <Segmented
+        v-model:value="view"
+        :options="[
+          { label: '库存余额', value: 'balance' },
+          { label: '库存流水', value: 'ledger' },
+        ]"
+        @change="queryCurrentView"
+      />
+    </div>
+
+    <BalanceGrid v-if="view === 'balance'" table-title="库存余额列表">
+      <template #toolbar-tools>
+        <div class="flex items-center gap-1">
+          <Button
+            v-access:code="'erp:stock:export'"
+            class="gap-1"
+            title="导出当前筛选"
+            @click="exportCurrentView"
+          >
+            <Download class="size-4" />
+            <span>导出</span>
+          </Button>
         </div>
-      </div>
-      <div class="flex items-center gap-2">
-        <Button
-          v-access:code="
-            view === 'balance' ? 'erp:stock:export' : 'erp:stock-record:export'
-          "
-          class="gap-1"
-          title="导出当前筛选"
-          @click="exportCurrentView"
-        >
-          <Download class="size-4" />
-          <span>导出</span>
-        </Button>
-        <Segmented
-          v-if="!isDedicatedPage"
-          v-model:value="view"
-          :options="[
-            { label: '库存余额', value: 'balance' },
-            { label: '库存流水', value: 'ledger' },
-          ]"
-          @change="queryCurrentView"
-        />
-      </div>
-    </div>
-
-    <div class="mb-3 flex flex-wrap items-center gap-2">
-      <ErpRemoteSelect
-        v-if="view === 'balance'"
-        v-model:value="balanceFilters.product_id"
-        allow-clear
-        class="w-52"
-        :format-option="formatProduct"
-        :load="loadProducts"
-        placeholder="商品"
-        @change="queryCurrentView"
-      />
-      <ErpRemoteSelect
-        v-else
-        v-model:value="ledgerFilters.product_id"
-        allow-clear
-        class="w-52"
-        :format-option="formatProduct"
-        :load="loadProducts"
-        placeholder="商品"
-        @change="queryCurrentView"
-      />
-      <ErpRemoteSelect
-        v-if="view === 'balance'"
-        v-model:value="balanceFilters.category_id"
-        allow-clear
-        class="w-48"
-        :format-option="formatCategory"
-        :load="loadCategories"
-        placeholder="商品分类"
-        @change="queryCurrentView"
-      />
-      <ErpRemoteSelect
-        v-else
-        v-model:value="ledgerFilters.category_id"
-        allow-clear
-        class="w-48"
-        :format-option="formatCategory"
-        :load="loadCategories"
-        placeholder="商品分类"
-        @change="queryCurrentView"
-      />
-      <ErpRemoteSelect
-        v-if="view === 'balance'"
-        v-model:value="balanceFilters.warehouse_id"
-        allow-clear
-        class="w-48"
-        :format-option="formatWarehouse"
-        :load="loadWarehouses"
-        placeholder="仓库"
-        @change="queryCurrentView"
-      />
-      <ErpRemoteSelect
-        v-else
-        v-model:value="ledgerFilters.warehouse_id"
-        allow-clear
-        class="w-48"
-        :format-option="formatWarehouse"
-        :load="loadWarehouses"
-        placeholder="仓库"
-        @change="queryCurrentView"
-      />
-      <template v-if="view === 'ledger'">
-        <Select
-          v-model:value="ledgerFilters.ledger_type"
-          allow-clear
-          class="w-40"
-          :options="ledgerTypeOptions"
-          placeholder="业务类型"
-          @change="queryCurrentView"
-        />
-        <Input
-          v-model:value="ledgerFilters.source_document_no"
-          allow-clear
-          class="w-44"
-          placeholder="来源单号"
-          @press-enter="queryCurrentView"
-        />
-        <Input
-          v-model:value="ledgerFilters.occurred_from"
-          class="w-52"
-          type="datetime-local"
-          @change="queryCurrentView"
-        />
-        <Input
-          v-model:value="ledgerFilters.occurred_to"
-          class="w-52"
-          type="datetime-local"
-          @change="queryCurrentView"
-        />
       </template>
-      <Button title="应用筛选" @click="queryCurrentView"
-        ><Search class="size-4"
-      /></Button>
-      <Button title="清除筛选" @click="resetFilters"
-        ><RotateCw class="size-4"
-      /></Button>
-    </div>
-
-    <BalanceGrid v-if="view === 'balance'" table-title="库存余额">
       <template #operation="{ row }">
         <VbenTableAction
           :actions="[
@@ -382,7 +325,21 @@ async function loadWarehouses(keyword: string) {
         />
       </template>
     </BalanceGrid>
-    <LedgerGrid v-else table-title="库存流水">
+
+    <LedgerGrid v-else table-title="库存流水列表">
+      <template #toolbar-tools>
+        <div class="flex items-center gap-1">
+          <Button
+            v-access:code="'erp:stock-record:export'"
+            class="gap-1"
+            title="导出当前筛选"
+            @click="exportCurrentView"
+          >
+            <Download class="size-4" />
+            <span>导出</span>
+          </Button>
+        </div>
+      </template>
       <template #sourceDocument="{ row }">
         <LedgerSourceDocument
           :document-id="row.source_document_id"

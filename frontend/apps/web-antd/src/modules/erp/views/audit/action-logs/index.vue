@@ -1,21 +1,12 @@
 <script lang="ts" setup>
 import type { VxeTableGridOptions } from '#/adapter/vxe-table';
-import type { ActionLogQuery, DocumentActionLogRecord } from '#/modules/erp/api/erp';
-
-import { reactive } from 'vue';
+import type { DocumentActionLogRecord } from '#/modules/erp/api/erp';
 
 import { Page } from '@vben/common-ui';
-import { RotateCw, Search } from '@vben/icons';
-import { Button, Input, Select, Tag } from 'ant-design-vue';
+import { Tag } from 'ant-design-vue';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
 import { listDocumentActionLogsApi } from '#/modules/erp/api/erp';
-
-const filters = reactive<ActionLogQuery>({
-  action: undefined,
-  resource_id: undefined,
-  resource_type: undefined,
-});
 
 const actionOptions = [
   { label: '创建', value: 'created' },
@@ -31,7 +22,34 @@ const actionLabels: Record<string, string> = Object.fromEntries(
   actionOptions.map((option) => [option.value, option.label]),
 );
 
-const [Grid, gridApi] = useVbenVxeGrid({
+const [Grid] = useVbenVxeGrid({
+  formOptions: {
+    schema: [
+      {
+        component: 'Input',
+        componentProps: { allowClear: true, placeholder: '请输入资源类型' },
+        fieldName: 'resource_type',
+        label: '资源类型',
+      },
+      {
+        component: 'Input',
+        componentProps: { allowClear: true, placeholder: '请输入资源 ID' },
+        fieldName: 'resource_id',
+        label: '资源 ID',
+      },
+      {
+        component: 'Select',
+        componentProps: {
+          allowClear: true,
+          options: actionOptions,
+          placeholder: '请选择操作动作',
+        },
+        fieldName: 'action',
+        label: '操作动作',
+      },
+    ],
+    showCollapseButton: true,
+  },
   gridOptions: {
     columns: [
       { field: 'occurred_at', formatter: 'formatDateTime', minWidth: 170, title: '操作时间' },
@@ -48,42 +66,26 @@ const [Grid, gridApi] = useVbenVxeGrid({
     height: 'auto',
     proxyConfig: {
       ajax: {
-        query: async ({ page }) =>
+        query: async ({ page }, formValues) =>
           await listDocumentActionLogsApi({
-            ...filters,
+            ...formValues,
             page: page.currentPage,
             page_size: page.pageSize,
           }),
       },
     },
     rowConfig: { keyField: 'id' },
-    toolbarConfig: { custom: true, refresh: true, zoom: true },
+    toolbarConfig: { custom: true, refresh: true, search: true, zoom: true },
   } as VxeTableGridOptions<DocumentActionLogRecord>,
 });
-
-function search() {
-  gridApi.query();
-}
-
-function reset() {
-  Object.assign(filters, { action: undefined, resource_id: undefined, resource_type: undefined });
-  search();
-}
 </script>
 
 <template>
   <Page auto-content-height>
-    <Grid table-title="操作日志">
-      <template #toolbar-tools>
-        <div class="flex flex-wrap items-center gap-1">
-          <Input v-model:value="filters.resource_type" allow-clear class="w-36" placeholder="资源类型" @press-enter="search" />
-          <Input v-model:value="filters.resource_id" allow-clear class="w-48" placeholder="资源 ID" @press-enter="search" />
-          <Select v-model:value="filters.action" allow-clear class="w-36" :options="actionOptions" placeholder="操作动作" />
-          <Button class="gap-1" type="primary" @click="search"><Search class="size-4" /><span>查询</span></Button>
-          <Button class="gap-1" @click="reset"><RotateCw class="size-4" /><span>重置</span></Button>
-        </div>
+    <Grid table-title="操作日志列表">
+      <template #action="{ row }">
+        <Tag color="blue">{{ actionLabels[row.action] ?? row.action }}</Tag>
       </template>
-      <template #action="{ row }"><Tag color="blue">{{ actionLabels[row.action] ?? row.action }}</Tag></template>
     </Grid>
   </Page>
 </template>

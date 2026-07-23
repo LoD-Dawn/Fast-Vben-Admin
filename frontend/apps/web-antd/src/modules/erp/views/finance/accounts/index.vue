@@ -27,6 +27,7 @@ import {
   listSettlementAccountsApi,
   updateSettlementAccountApi,
 } from '#/modules/erp/api/erp';
+import { buildKeyword } from '#/views/system/shared/utils';
 
 interface AccountForm {
   account_no?: string;
@@ -40,6 +41,7 @@ interface AccountForm {
 const drawerOpen = ref(false);
 const saving = ref(false);
 const editingId = ref<string>();
+const exportQuery = ref<Record<string, string>>({});
 const form = reactive<AccountForm>({
   account_no: undefined,
   is_active: true,
@@ -50,6 +52,17 @@ const form = reactive<AccountForm>({
 });
 
 const [Grid, gridApi] = useVbenVxeGrid({
+  formOptions: {
+    schema: [
+      {
+        component: 'Input',
+        componentProps: { placeholder: '请输入账户名称或账号' },
+        fieldName: 'keyword',
+        label: '账户检索',
+      },
+    ],
+    showCollapseButton: true,
+  },
   gridOptions: {
     columns: [
       { field: 'name', minWidth: 180, title: '账户名称' },
@@ -63,15 +76,19 @@ const [Grid, gridApi] = useVbenVxeGrid({
     height: 'auto',
     proxyConfig: {
       ajax: {
-        query: async ({ page }) =>
-          await listSettlementAccountsApi({
+        query: async ({ page }, values) => {
+          const keyword = buildKeyword(values.keyword);
+          exportQuery.value = keyword ? { keyword } : {};
+          return await listSettlementAccountsApi({
+            keyword: keyword || undefined,
             page: page.currentPage,
             page_size: page.pageSize,
-          }),
+          });
+        },
       },
     },
     rowConfig: { keyField: 'id' },
-    toolbarConfig: { custom: true, refresh: true, zoom: true },
+    toolbarConfig: { custom: true, refresh: true, search: true, zoom: true },
   } as VxeTableGridOptions<SettlementAccountRecord>,
 });
 
@@ -151,7 +168,7 @@ async function remove(record: SettlementAccountRecord) {
           <Button v-access:code="'erp:account:create'" class="gap-1" type="primary" @click="openCreate">
             <Plus class="size-5" /><span>新增结算账户</span>
           </Button>
-          <ExportCsvButton file-name="结算账户列表.csv" permission="erp:account:export" resource="account" />
+          <ExportCsvButton file-name="结算账户列表.csv" permission="erp:account:export" :query="exportQuery" resource="account" />
         </div>
       </template>
       <template #default="{ row }"><Tag v-if="row.is_default" color="blue">默认</Tag><span v-else>-</span></template>

@@ -435,13 +435,8 @@ watch(
       </template>
     </Drawer>
 
-    <div class="mb-3 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--vben-border-color)] pb-3">
-      <div>
-        <div class="text-base font-semibold">{{ isDedicatedPage ? kindLabels[kind] : '库存单据' }}</div>
-        <div class="mt-1 text-sm text-[var(--vben-text-color-2)]">制单后审核记账；反审核会生成冲销流水</div>
-      </div>
+    <div v-if="!isDedicatedPage" class="mb-3">
       <Segmented
-        v-if="!isDedicatedPage"
         :options="[
           { label: '其他入库', value: 'in' },
           { label: '其他出库', value: 'out' },
@@ -460,7 +455,7 @@ watch(
       :warehouse-loader="loadWarehouses"
       @query="gridApi.query()"
     />
-    <Grid :table-title="kindLabels[kind]">
+    <Grid :table-title="`${kindLabels[kind]}列表`">
       <template #toolbar-tools>
         <div class="flex items-center gap-1">
           <Button v-access:code="`${permissionPrefix[kind]}:create`" class="gap-1" type="primary" @click="openCreate">

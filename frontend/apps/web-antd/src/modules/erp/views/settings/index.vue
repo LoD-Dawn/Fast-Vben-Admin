@@ -121,12 +121,12 @@ const [Grid, gridApi] = useVbenVxeGrid({
     schema: [
       {
         component: 'Input',
-        componentProps: { placeholder: '按编码或名称检索' },
+        componentProps: { placeholder: '请输入编码或名称' },
         fieldName: 'keyword',
-        label: '检索',
+        label: '基础数据检索',
       },
     ],
-    submitOnChange: true,
+    showCollapseButton: true,
   },
   gridOptions: {
     columns: [
@@ -455,17 +455,8 @@ watch(
       </template>
     </Drawer>
 
-    <div
-      class="mb-3 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--vben-border-color)] pb-3"
-    >
-      <div>
-        <div class="text-base font-semibold">{{ isDedicatedPage ? labels[kind] : '基础资料' }}</div>
-        <div class="mt-1 text-sm text-[var(--vben-text-color-2)]">
-          {{ isDedicatedPage ? `维护${labels[kind]}资料` : '维护商品单位、分类和库存仓库' }}
-        </div>
-      </div>
+    <div v-if="!isDedicatedPage" class="mb-3">
       <Segmented
-        v-if="!isDedicatedPage"
         :options="[
           { label: '商品单位', value: 'unit' },
           { label: '商品分类', value: 'category' },
@@ -475,7 +466,7 @@ watch(
         @change="changeKind($event as MasterDataKind)"
       />
     </div>
-    <Grid :table-title="labels[kind]">
+    <Grid :table-title="`${labels[kind]}列表`">
       <template #toolbar-tools>
         <div class="flex items-center gap-1">
           <Button
